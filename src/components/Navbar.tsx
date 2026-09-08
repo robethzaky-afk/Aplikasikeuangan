@@ -11,6 +11,7 @@ import {
   PlusCircle,
   Menu,
   X,
+  Database,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { formatRupiah } from '../utils/formatters';
@@ -47,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'bku', label: 'Buku Kas Umum (BKU)', icon: BookOpenCheck },
     { id: 'students', label: 'Data Siswa', icon: Users },
     { id: 'reports', label: 'Laporan & Rekap', icon: FileText },
-    { id: 'settings', label: 'Pengaturan & Backup', icon: Settings },
+    { id: 'settings', label: 'Pengaturan & Cloud DB', icon: Database },
   ];
 
   const handleTabClick = (tabId: NavTab) => {
@@ -81,8 +82,20 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Quick Stats & Action Buttons */}
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex flex-col text-right bg-emerald-900/60 px-3 py-1 rounded-lg border border-emerald-700/50">
+          <div className="flex items-center gap-2.5">
+            {/* Supabase Cloud Status Button */}
+            <button
+              type="button"
+              onClick={() => onTabChange('settings')}
+              title="Integrasi Database Supabase Cloud - Klik untuk buka pengaturan"
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-900/80 hover:bg-emerald-950 border border-emerald-600/50 rounded-lg text-xs text-emerald-200 transition-colors cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Supabase Cloud</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </button>
+
+            <div className="hidden lg:flex flex-col text-right bg-emerald-900/60 px-3 py-1 rounded-lg border border-emerald-700/50">
               <span className="text-[11px] text-emerald-300">Total Saldo Kas Aktif</span>
               <span className="text-sm font-bold font-mono text-white">
                 {formatRupiah(totalCashBalance)}

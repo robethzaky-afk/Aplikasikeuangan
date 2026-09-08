@@ -14,6 +14,14 @@ import {
   INITIAL_SYAHRIAH_PAYMENTS,
   INITIAL_TRANSACTIONS,
 } from '../data/initialData';
+import {
+  supabase,
+  mapStudentToDb,
+  mapSyahriahToDb,
+  mapAccountToDb,
+  mapTransactionToDb,
+  mapProfileToDb,
+} from '../lib/supabase';
 
 interface FinanceContextType {
   schoolProfile: SchoolProfile;
@@ -68,6 +76,15 @@ const STORAGE_KEYS = {
   SYAHRIAH: 'mi_keuangan_syahriah_v1',
   ACCOUNTS: 'mi_keuangan_accounts_v1',
   TRANSACTIONS: 'mi_keuangan_transactions_v1',
+};
+
+// Safe wrapper for fire-and-forget Supabase sync calls
+const safeSupabase = (op: any) => {
+  try {
+    Promise.resolve(op).catch(() => {});
+  } catch {
+    // Ignore offline or uninitialized errors
+  }
 };
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -205,6 +222,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   // Actions
   const updateSchoolProfile = (profile: SchoolProfile) => {
     setSchoolProfile(profile);
+    // Background sync to Supabase
+    safeSupabase(supabase.from('school_profile').upsert(mapProfileToDb(profile)));
   };
 
   const addStudent = (studentData: Omit<Student, 'id'>): Student => {
@@ -213,6 +232,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       id: `std-${Date.now()}`,
     };
     setStudents((prev) => [...prev, newStudent]);
+
+    // Background sync to Supabase
+    safeSupabase(supabase.from('students').upsert(mapStudentToDb(newStudent)));
+
     return newStudent;
   };
 
@@ -220,10 +243,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     setStudents((prev) =>
       prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
     );
+
+    // Background sync to Supabase
+    safeSupabase(supabase.from('students').upsert(mapStudentToDb(updatedStudent)));
   };
 
   const deleteStudent = (id: string) => {
     setStudents((prev) => prev.filter((s) => s.id !== id));
+
+    // Background sync to Supabase
+    safeSupabase(supabase.from('students').delete().eq('id', id));
   };
 
   const clearAllStudents = (gradeFilter?: number | 'ALL') => {
@@ -232,6 +261,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       setSyahriahPayments([]);
       localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify([]));
+
+      // Background sync to Supabase
+      safeSupabase(supabase.from('students').delete().neq('id', ''));
+      safeSupabase(supabase.from('syahriah_payments').delete().neq('id', ''));
     } else {
       setStudents((prev) => {
         const remaining = prev.filter((s) => s.grade !== gradeFilter);
@@ -243,6 +276,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify(remaining));
         return remaining;
       });
+
+      // Background sync to Supabase
+      safeSupabase(supabase.from('students').delete().eq('grade', gradeFilter));
+      safeSupabase(supabase.from('syahriah_payments').delete().eq('grade', gradeFilter));
     }
   };
 
@@ -321,14 +358,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setSyahriahPayments((prev) => [newPayment, ...prev]);
 
+    // Background sync to Supabase
+    safeSupabase(supabase.from('syahriah_payments').insert(mapSyahriahToDb(newPayment)));
+
     // Update account balance (Pemasukan)
-    setCashAccounts((prev) =>
-      prev.map((acc) =>
+    setCashAccounts((prev) => {
+      const updated = prev.map((acc) =>
         acc.id === paymentData.accountId
           ? { ...acc, balance: acc.balance + paymentData.totalAmount }
           : acc
-      )
-    );
+      );
+      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
+      return updated;
+    });
 
     return newPayment;
   };
@@ -337,14 +379,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     const payment = syahriahPayments.find((p) => p.id === id);
     if (!payment) return;
 
+    // Background sync to Supabase
+    safeSupabase(supabase.from('syahriah_payments').delete().eq('id', id));
+
     // Deduct from account balance
-    setCashAccounts((prev) =>
-      prev.map((acc) =>
+    setCashAccounts((prev) => {
+      const updated = prev.map((acc) =>
         acc.id === payment.accountId
           ? { ...acc, balance: Math.max(0, acc.balance - payment.totalAmount) }
           : acc
-      )
-    );
+      );
+      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
+      return updated;
+    });
 
     setSyahriahPayments((prev) => prev.filter((p) => p.id !== id));
   };
@@ -369,9 +416,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setTransactions((prev) => [newTrx, ...prev]);
 
+    // Background sync to Supabase
+    safeSupabase(supabase.from('financial_transactions').insert(mapTransactionToDb(newTrx)));
+
     // Update account balance
-    setCashAccounts((prev) =>
-      prev.map((acc) => {
+    setCashAccounts((prev) => {
+      const updated = prev.map((acc) => {
         if (acc.id === trxData.accountId) {
           const newBalance =
             trxData.type === 'INCOME'
@@ -380,8 +430,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           return { ...acc, balance: newBalance };
         }
         return acc;
-      })
-    );
+      });
+      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
+      return updated;
+    });
 
     return newTrx;
   };
@@ -390,9 +442,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     const trx = transactions.find((t) => t.id === id);
     if (!trx) return;
 
+    // Background sync to Supabase
+    safeSupabase(supabase.from('financial_transactions').delete().eq('id', id));
+
     // Revert account balance
-    setCashAccounts((prev) =>
-      prev.map((acc) => {
+    setCashAccounts((prev) => {
+      const updated = prev.map((acc) => {
         if (acc.id === trx.accountId) {
           const revertedBalance =
             trx.type === 'INCOME'
@@ -401,8 +456,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           return { ...acc, balance: revertedBalance };
         }
         return acc;
-      })
-    );
+      });
+      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
+      return updated;
+    });
 
     setTransactions((prev) => prev.filter((t) => t.id !== id));
   };

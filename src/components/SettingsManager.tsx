@@ -10,10 +10,12 @@ import {
   AlertTriangle,
   School,
   ShieldAlert,
+  Database,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { SchoolProfile } from '../types';
 import { formatRupiah } from '../utils/formatters';
+import { SupabaseManager } from './SupabaseManager';
 
 export const SettingsManager: React.FC = () => {
   const {
@@ -24,6 +26,7 @@ export const SettingsManager: React.FC = () => {
     resetToDefault,
   } = useFinance();
 
+  const [activeTab, setActiveTab] = useState<'profile' | 'supabase'>('supabase');
   const [formData, setFormData] = useState<SchoolProfile>({ ...schoolProfile });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -84,8 +87,8 @@ export const SettingsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header Card */}
-      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex items-center justify-between">
+      {/* Header Card with Navigation Tabs */}
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
@@ -93,14 +96,49 @@ export const SettingsManager: React.FC = () => {
             </span>
           </div>
           <h2 className="text-xl font-bold text-gray-900 mt-1">
-            Pengaturan Profil & Cadangan Data
+            Pengaturan & Database Cloud
           </h2>
           <p className="text-xs text-gray-500">
-            Identitas resmi madrasah, tarif standar syahriah, dan ekspor/impor cadangan data bendahara.
+            Kelola database cloud Supabase, identitas resmi madrasah, tarif standar syahriah, dan cadangan data.
           </p>
+        </div>
+
+        {/* Tab Buttons */}
+        <div className="flex items-center gap-1.5 p-1 bg-gray-100 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setActiveTab('supabase')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'supabase'
+                ? 'bg-white text-emerald-800 shadow-xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Database className="w-4 h-4 text-emerald-600" />
+            <span>Database Supabase Cloud</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('profile')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'profile'
+                ? 'bg-white text-emerald-800 shadow-xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <School className="w-4 h-4 text-emerald-600" />
+            <span>Profil & Backup Lokal</span>
+          </button>
         </div>
       </div>
 
+      {/* Supabase Tab View */}
+      {activeTab === 'supabase' && <SupabaseManager />}
+
+      {/* Profile & Local Backup Tab View */}
+      {activeTab === 'profile' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: School Profile Form (8 cols) */}
         <div className="lg:col-span-8 bg-white p-6 rounded-xl border border-gray-200 shadow-xs">
@@ -399,6 +437,7 @@ export const SettingsManager: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

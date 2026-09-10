@@ -160,6 +160,35 @@ CREATE POLICY "Public full access financial_transactions" ON public.financial_tr
 DROP POLICY IF EXISTS "Public full access cash_transfers" ON public.cash_transfers;
 CREATE POLICY "Public full access cash_transfers" ON public.cash_transfers FOR ALL TO anon USING (true) WITH CHECK (true);
 
+-- Aktifkan Supabase Realtime Replication untuk semua tabel
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.school_profile;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.students;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.cash_accounts;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.syahriah_payments;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.financial_transactions;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.cash_transfers;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+END $$;
+
 -- ====================================================================
 -- DATA AWAL STANDAR MADRASAH, REKENING BANK & KEUANGAN BAWAAN
 -- ====================================================================
@@ -284,9 +313,13 @@ export async function checkSupabaseHealth(): Promise<{
 
 // Helper Mappers: Database snake_case <-> App camelCase
 export function mapStudentToDb(student: Student) {
+  const safeNis =
+    student.nis && student.nis.trim() !== ''
+      ? student.nis.trim()
+      : `NIS-${student.id.replace(/^std-/, '')}`;
   return {
     id: student.id,
-    nis: student.nis,
+    nis: safeNis,
     nisn: student.nisn || null,
     name: student.name,
     gender: student.gender,
@@ -485,3 +518,30 @@ export function mapDbToProfile(row: any): SchoolProfile {
     standardSyahriah: Number(row.standard_syahriah || 20000),
   };
 }
+
+export function mapTransferToDb(trf: CashTransfer) {
+  return {
+    id: trf.id,
+    date: trf.date,
+    from_account_id: trf.fromAccountId,
+    to_account_id: trf.toAccountId,
+    amount: trf.amount,
+    description: trf.description,
+    recorded_by: trf.recordedBy,
+    created_at: trf.createdAt || new Date().toISOString(),
+  };
+}
+
+export function mapDbToTransfer(row: any): CashTransfer {
+  return {
+    id: row.id,
+    date: row.date,
+    fromAccountId: row.from_account_id,
+    toAccountId: row.to_account_id,
+    amount: Number(row.amount),
+    description: row.description || '',
+    recordedBy: row.recorded_by,
+    createdAt: row.created_at,
+  };
+}
+

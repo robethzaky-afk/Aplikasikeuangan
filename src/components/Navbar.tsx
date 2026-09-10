@@ -12,6 +12,10 @@ import {
   Menu,
   X,
   Database,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  WifiOff,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { formatRupiah } from '../utils/formatters';
@@ -38,7 +42,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenQuickSyahriah,
   onOpenQuickTrx,
 }) => {
-  const { schoolProfile, totalCashBalance } = useFinance();
+  const {
+    schoolProfile,
+    totalCashBalance,
+    cloudSyncStatus,
+    lastSyncedAt,
+    forceFullSync,
+  } = useFinance();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems: { id: NavTab; label: string; icon: React.FC<{ className?: string }> }[] = [
@@ -83,16 +93,64 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Quick Stats & Action Buttons */}
           <div className="flex items-center gap-2.5">
-            {/* Supabase Cloud Status Button */}
+            {/* Supabase Auto Sync Live Badge */}
             <button
               type="button"
-              onClick={() => onTabChange('settings')}
-              title="Integrasi Database Supabase Cloud - Klik untuk buka pengaturan"
-              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-900/80 hover:bg-emerald-950 border border-emerald-600/50 rounded-lg text-xs text-emerald-200 transition-colors cursor-pointer"
+              onClick={() => {
+                if (cloudSyncStatus === 'error') {
+                  forceFullSync();
+                } else {
+                  onTabChange('settings');
+                }
+              }}
+              title={
+                lastSyncedAt
+                  ? `Singkron Otomatis Aktif (Terakhir: ${new Date(lastSyncedAt).toLocaleTimeString('id-ID')}). Klik untuk buka status Cloud.`
+                  : 'Singkron Otomatis Supabase Cloud Aktif. Klik untuk membuka pengaturan.'
+              }
+              className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer border ${
+                cloudSyncStatus === 'syncing'
+                  ? 'bg-amber-950/70 border-amber-500/60 text-amber-200'
+                  : cloudSyncStatus === 'synced'
+                  ? 'bg-emerald-900/80 hover:bg-emerald-950 border-emerald-500/60 text-emerald-200'
+                  : cloudSyncStatus === 'error'
+                  ? 'bg-rose-900/80 hover:bg-rose-950 border-rose-500/60 text-rose-200'
+                  : 'bg-emerald-900/80 hover:bg-emerald-950 border-emerald-600/50 text-emerald-200'
+              }`}
             >
-              <Database className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Supabase Cloud</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              {cloudSyncStatus === 'syncing' ? (
+                <RefreshCw className="w-3.5 h-3.5 text-amber-300 animate-spin" />
+              ) : cloudSyncStatus === 'synced' ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+              ) : cloudSyncStatus === 'error' ? (
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-300" />
+              ) : cloudSyncStatus === 'offline' ? (
+                <WifiOff className="w-3.5 h-3.5 text-gray-300" />
+              ) : (
+                <Database className="w-3.5 h-3.5 text-emerald-300" />
+              )}
+              <span>
+                {cloudSyncStatus === 'syncing'
+                  ? 'Menyinkronkan...'
+                  : cloudSyncStatus === 'synced'
+                  ? 'Singkron Otomatis'
+                  : cloudSyncStatus === 'error'
+                  ? 'Singkron Tertunda'
+                  : cloudSyncStatus === 'offline'
+                  ? 'Offline (Lokal)'
+                  : 'Supabase Cloud'}
+              </span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  cloudSyncStatus === 'syncing'
+                    ? 'bg-amber-400 animate-ping'
+                    : cloudSyncStatus === 'synced'
+                    ? 'bg-emerald-400'
+                    : cloudSyncStatus === 'error'
+                    ? 'bg-rose-400 animate-pulse'
+                    : 'bg-emerald-400'
+                }`}
+              />
             </button>
 
             <div className="hidden lg:flex flex-col text-right bg-emerald-900/60 px-3 py-1 rounded-lg border border-emerald-700/50">
@@ -172,8 +230,24 @@ export const Navbar: React.FC<NavbarProps> = ({
       {mobileMenuOpen && (
         <div id="mobile-navigation-dropdown" className="lg:hidden bg-white border-t border-gray-200 px-4 py-3 space-y-1 shadow-lg animate-in slide-in-from-top-2 duration-150">
           <div className="pb-2 mb-2 border-b border-gray-100 flex justify-between items-center text-xs text-gray-500">
-            <span>Tahun Pelajaran: <strong className="text-gray-800">{schoolProfile.academicYear}</strong></span>
-            <span>Kas: <strong className="font-mono text-emerald-700">{formatRupiah(totalCashBalance)}</strong></span>
+            <span>Tahun: <strong className="text-gray-800">{schoolProfile.academicYear}</strong></span>
+            <div
+              onClick={() => {
+                onTabChange('settings');
+                setMobileMenuOpen(false);
+              }}
+              className="flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-medium"
+            >
+              <Database className="w-3 h-3 text-emerald-600" />
+              <span>
+                {cloudSyncStatus === 'syncing'
+                  ? 'Menyinkron...'
+                  : cloudSyncStatus === 'synced'
+                  ? 'Singkron Otomatis'
+                  : 'Supabase Cloud'}
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            </div>
           </div>
           {navItems.map((item) => {
             const Icon = item.icon;

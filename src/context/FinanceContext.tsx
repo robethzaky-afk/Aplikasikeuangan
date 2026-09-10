@@ -6,6 +6,7 @@ import {
   FinancialTransaction,
   SchoolProfile,
   AcademicMonth,
+  CloudSyncStatus,
 } from '../types';
 import {
   INITIAL_SCHOOL_PROFILE,
@@ -16,11 +17,17 @@ import {
 } from '../data/initialData';
 import {
   supabase,
+  checkSupabaseHealth,
   mapStudentToDb,
+  mapDbToStudent,
   mapSyahriahToDb,
+  mapDbToSyahriah,
   mapAccountToDb,
+  mapDbToAccount,
   mapTransactionToDb,
+  mapDbToTransaction,
   mapProfileToDb,
+  mapDbToProfile,
 } from '../lib/supabase';
 
 interface FinanceContextType {
@@ -59,6 +66,11 @@ interface FinanceContextType {
   ) => void;
   activeReceipt: SyahriahPaymentRecord | null;
   setActiveReceipt: (receipt: SyahriahPaymentRecord | null) => void;
+  // Cloud Sync Realtime
+  cloudSyncStatus: CloudSyncStatus;
+  lastSyncedAt: Date | null;
+  syncErrorMessage: string | null;
+  forceFullSync: () => Promise<{ success: boolean; message: string }>;
   // Calculations
   getStudentPaidMonths: (studentId: string) => AcademicMonth[];
   isMonthPaid: (studentId: string, month: AcademicMonth) => boolean;
@@ -239,6 +251,166 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   const [activeReceipt, setActiveReceipt] =
     useState<SyahriahPaymentRecord | null>(null);
 
+  // Realtime Cloud Auto-Sync State
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('idle');
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+
+  // Helper untuk sinkronisasi otomatis per-aksi (Mutation auto-sync)
+  const syncWithCloud = async <T,>(operation: () => Promise<T>): Promise<T | null> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setCloudSyncStatus('offline');
+      return null;
+    }
+    setCloudSyncStatus('syncing');
+    try {
+      const res = await operation();
+      setCloudSyncStatus('synced');
+      setLastSyncedAt(new Date());
+      setSyncErrorMessage(null);
+      return res;
+    } catch (err: any) {
+      console.warn('Auto-sync notice:', err);
+      setCloudSyncStatus('error');
+      setSyncErrorMessage(err.message || String(err));
+      return null;
+    }
+  };
+
+  // Sinkronisasi Penuh Dua Arah (Bidirectional Auto-Sync)
+  const forceFullSync = async (): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setCloudSyncStatus('offline');
+      return {
+        success: false,
+        message: 'Koneksi internet offline. Data tetap tersimpan aman di penyimpanan lokal.',
+      };
+    }
+
+    setCloudSyncStatus('syncing');
+    try {
+      const health = await checkSupabaseHealth();
+      if (!health.connected || !health.tablesFound) {
+        setCloudSyncStatus('error');
+        setSyncErrorMessage(health.message);
+        return {
+          success: false,
+          message: health.message,
+        };
+      }
+
+      // 1. Bersihkan legacy 'bank-bri' dari Supabase jika ada
+      await supabase.from('cash_accounts').delete().eq('id', 'bank-bri');
+
+      // 2. Sinkronkan Profil Madrasah
+      const { data: cloudProfile } = await supabase
+        .from('school_profile')
+        .select('*')
+        .eq('id', 'default')
+        .maybeSingle();
+
+      if (cloudProfile) {
+        const mapped = mapDbToProfile(cloudProfile);
+        setSchoolProfile(mapped);
+      } else {
+        await supabase.from('school_profile').upsert(mapProfileToDb(schoolProfile));
+      }
+
+      // 3. Sinkronkan Akun Kas & Bank
+      const { data: cloudAccounts, error: accErr } = await supabase
+        .from('cash_accounts')
+        .select('*');
+
+      if (!accErr && cloudAccounts && cloudAccounts.length > 0) {
+        const mapped = cloudAccounts.map(mapDbToAccount);
+        setCashAccounts(mapped);
+      } else if (cashAccounts.length > 0) {
+        await supabase.from('cash_accounts').upsert(cashAccounts.map(mapAccountToDb));
+      }
+
+      // 4. Sinkronkan Data Siswa
+      const { data: cloudStudents, error: stdErr } = await supabase
+        .from('students')
+        .select('*')
+        .order('grade', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (!stdErr && cloudStudents && cloudStudents.length > 0) {
+        const mapped = cloudStudents.map(mapDbToStudent);
+        setStudents(mapped);
+        const cloudIds = new Set(cloudStudents.map((s) => s.id));
+        const missingInCloud = students.filter((s) => !cloudIds.has(s.id));
+        if (missingInCloud.length > 0) {
+          for (let i = 0; i < missingInCloud.length; i += 50) {
+            await supabase
+              .from('students')
+              .upsert(missingInCloud.slice(i, i + 50).map(mapStudentToDb));
+          }
+        }
+      } else if (students.length > 0) {
+        for (let i = 0; i < students.length; i += 50) {
+          await supabase
+            .from('students')
+            .upsert(students.slice(i, i + 50).map(mapStudentToDb));
+        }
+      }
+
+      // 5. Sinkronkan Pembayaran Syahriah
+      const { data: cloudSyahriah, error: syahErr } = await supabase
+        .from('syahriah_payments')
+        .select('*')
+        .order('payment_date', { ascending: false });
+
+      if (!syahErr && cloudSyahriah && cloudSyahriah.length > 0) {
+        const mapped = cloudSyahriah.map(mapDbToSyahriah);
+        setSyahriahPayments(mapped);
+      } else if (syahriahPayments.length > 0) {
+        for (let i = 0; i < syahriahPayments.length; i += 50) {
+          await supabase
+            .from('syahriah_payments')
+            .upsert(syahriahPayments.slice(i, i + 50).map(mapSyahriahToDb));
+        }
+      }
+
+      // 6. Sinkronkan Transaksi Keuangan BKU
+      const { data: cloudTransactions, error: trxErr } = await supabase
+        .from('financial_transactions')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (!trxErr && cloudTransactions && cloudTransactions.length > 0) {
+        const mapped = cloudTransactions.map(mapDbToTransaction);
+        setTransactions(mapped);
+      } else if (transactions.length > 0) {
+        for (let i = 0; i < transactions.length; i += 50) {
+          await supabase
+            .from('financial_transactions')
+            .upsert(transactions.slice(i, i + 50).map(mapTransactionToDb));
+        }
+      }
+
+      const now = new Date();
+      setCloudSyncStatus('synced');
+      setLastSyncedAt(now);
+      setSyncErrorMessage(null);
+
+      return {
+        success: true,
+        message: `Sinkronisasi otomatis berhasil pada ${now.toLocaleTimeString('id-ID')}. Seluruh data tersinkron dengan Supabase Cloud.`,
+      };
+    } catch (err: any) {
+      setCloudSyncStatus('error');
+      setSyncErrorMessage(err.message || String(err));
+      return {
+        success: false,
+        message: `Gagal sinkronisasi otomatis: ${err.message || String(err)}`,
+      };
+    }
+  };
+
   // Sync to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(schoolProfile));
@@ -259,6 +431,165 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
   }, [transactions]);
+
+  // Otomatis sinkronisasi saat aplikasi dibuka & event listener online/offline
+  useEffect(() => {
+    let isMounted = true;
+
+    const runBootSync = async () => {
+      try {
+        await forceFullSync();
+      } catch (err) {
+        console.warn('Boot auto-sync note:', err);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        runBootSync();
+      }
+    }, 600);
+
+    const handleOnline = () => {
+      setCloudSyncStatus('syncing');
+      runBootSync();
+    };
+
+    const handleOffline = () => {
+      setCloudSyncStatus('offline');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Supabase Realtime Subscription Listener (Multi-tab / Multi-device realtime updates)
+  useEffect(() => {
+    let isMounted = true;
+
+    const channel = supabase
+      .channel('mi-sobo-realtime-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'school_profile' },
+        (payload) => {
+          if (!isMounted) return;
+          if (payload.new && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')) {
+            setSchoolProfile(mapDbToProfile(payload.new));
+            setLastSyncedAt(new Date());
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'students' },
+        (payload) => {
+          if (!isMounted) return;
+          if (payload.eventType === 'INSERT') {
+            const newStudent = mapDbToStudent(payload.new);
+            setStudents((prev) => {
+              if (prev.some((s) => s.id === newStudent.id)) return prev;
+              return [...prev, newStudent];
+            });
+            setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = mapDbToStudent(payload.new);
+            setStudents((prev) =>
+              prev.map((s) => (s.id === updated.id ? updated : s))
+            );
+            setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setStudents((prev) => prev.filter((s) => s.id !== deletedId));
+              setLastSyncedAt(new Date());
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_accounts' },
+        (payload) => {
+          if (!isMounted) return;
+          if (payload.eventType === 'INSERT') {
+            const newAcc = mapDbToAccount(payload.new);
+            setCashAccounts((prev) => {
+              if (prev.some((a) => a.id === newAcc.id)) return prev;
+              return [...prev, newAcc];
+            });
+            setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = mapDbToAccount(payload.new);
+            setCashAccounts((prev) =>
+              prev.map((a) => (a.id === updated.id ? updated : a))
+            );
+            setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setCashAccounts((prev) => prev.filter((a) => a.id !== deletedId));
+              setLastSyncedAt(new Date());
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'syahriah_payments' },
+        (payload) => {
+          if (!isMounted) return;
+          if (payload.eventType === 'INSERT') {
+            const newPayment = mapDbToSyahriah(payload.new);
+            setSyahriahPayments((prev) => {
+              if (prev.some((p) => p.id === newPayment.id)) return prev;
+              return [newPayment, ...prev];
+            });
+            setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setSyahriahPayments((prev) => prev.filter((p) => p.id !== deletedId));
+              setLastSyncedAt(new Date());
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'financial_transactions' },
+        (payload) => {
+          if (!isMounted) return;
+          if (payload.eventType === 'INSERT') {
+            const newTrx = mapDbToTransaction(payload.new);
+            setTransactions((prev) => {
+              if (prev.some((t) => t.id === newTrx.id)) return prev;
+              return [newTrx, ...prev];
+            });
+            setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setTransactions((prev) => prev.filter((t) => t.id !== deletedId));
+              setLastSyncedAt(new Date());
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Sekali saat mount: jika data belum dikosongkan, kosongkan data keuangan sekarang sesuai instruksi user
   useEffect(() => {
@@ -320,11 +651,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => clearTimeout(autoSyncTimer);
   }, []);
 
-  // Actions
+  // Actions dengan Sinkronisasi Otomatis ke Supabase Cloud
   const updateSchoolProfile = (profile: SchoolProfile) => {
     setSchoolProfile(profile);
-    // Background sync to Supabase
-    safeSupabase(supabase.from('school_profile').upsert(mapProfileToDb(profile)));
+    syncWithCloud(async () => {
+      const { error } = await supabase
+        .from('school_profile')
+        .upsert(mapProfileToDb(profile));
+      if (error) throw error;
+    });
   };
 
   const addStudent = (studentData: Omit<Student, 'id'>): Student => {
@@ -334,8 +669,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     };
     setStudents((prev) => [...prev, newStudent]);
 
-    // Background sync to Supabase
-    safeSupabase(supabase.from('students').upsert(mapStudentToDb(newStudent)));
+    syncWithCloud(async () => {
+      const { error } = await supabase
+        .from('students')
+        .upsert(mapStudentToDb(newStudent));
+      if (error) throw error;
+    });
 
     return newStudent;
   };
@@ -345,15 +684,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
     );
 
-    // Background sync to Supabase
-    safeSupabase(supabase.from('students').upsert(mapStudentToDb(updatedStudent)));
+    syncWithCloud(async () => {
+      const { error } = await supabase
+        .from('students')
+        .upsert(mapStudentToDb(updatedStudent));
+      if (error) throw error;
+    });
   };
 
   const deleteStudent = (id: string) => {
     setStudents((prev) => prev.filter((s) => s.id !== id));
 
-    // Background sync to Supabase
-    safeSupabase(supabase.from('students').delete().eq('id', id));
+    syncWithCloud(async () => {
+      const { error } = await supabase.from('students').delete().eq('id', id);
+      if (error) throw error;
+    });
   };
 
   const clearAllStudents = (gradeFilter?: number | 'ALL') => {
@@ -363,9 +708,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify([]));
 
-      // Background sync to Supabase
-      safeSupabase(supabase.from('students').delete().neq('id', ''));
-      safeSupabase(supabase.from('syahriah_payments').delete().neq('id', ''));
+      syncWithCloud(async () => {
+        await supabase.from('students').delete().neq('id', 'keep-none');
+        await supabase.from('syahriah_payments').delete().neq('id', 'keep-none');
+      });
     } else {
       setStudents((prev) => {
         const remaining = prev.filter((s) => s.grade !== gradeFilter);
@@ -378,9 +724,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         return remaining;
       });
 
-      // Background sync to Supabase
-      safeSupabase(supabase.from('students').delete().eq('grade', gradeFilter));
-      safeSupabase(supabase.from('syahriah_payments').delete().eq('grade', gradeFilter));
+      syncWithCloud(async () => {
+        await supabase.from('students').delete().eq('grade', gradeFilter);
+        await supabase.from('syahriah_payments').delete().eq('grade', gradeFilter);
+      });
     }
   };
 
@@ -390,6 +737,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   ) => {
     let addedCount = 0;
     let updatedCount = 0;
+    let importedListToSync: Student[] = [];
 
     setStudents((prev) => {
       const nextList = [...prev];
@@ -406,7 +754,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (existingIdx !== undefined) {
           if (strategy === 'UPSERT') {
-            // Update existing student with imported info, preserving their ID
             const existingId = nextList[existingIdx].id;
             nextList[existingIdx] = {
               ...stData,
@@ -414,9 +761,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
             };
             updatedCount++;
           }
-          // if SKIP_EXISTING, do nothing
         } else {
-          // Add new student
           const newId = `std-imp-${Date.now()}-${index}`;
           const newStudent: Student = {
             ...stData,
@@ -430,7 +775,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       });
 
+      importedListToSync = nextList;
       return nextList;
+    });
+
+    // Otomatis sinkronkan seluruh hasil import ke Supabase dalam batch
+    syncWithCloud(async () => {
+      if (importedListToSync.length > 0) {
+        for (let i = 0; i < importedListToSync.length; i += 50) {
+          const chunk = importedListToSync.slice(i, i + 50);
+          const { error } = await supabase
+            .from('students')
+            .upsert(chunk.map(mapStudentToDb));
+          if (error) throw error;
+        }
+      }
     });
 
     return {
@@ -459,18 +818,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setSyahriahPayments((prev) => [newPayment, ...prev]);
 
-    // Background sync to Supabase
-    safeSupabase(supabase.from('syahriah_payments').insert(mapSyahriahToDb(newPayment)));
-
-    // Update account balance (Pemasukan)
+    let updatedAccounts: CashAccount[] = [];
     setCashAccounts((prev) => {
-      const updated = prev.map((acc) =>
+      updatedAccounts = prev.map((acc) =>
         acc.id === paymentData.accountId
           ? { ...acc, balance: acc.balance + paymentData.totalAmount }
           : acc
       );
-      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
-      return updated;
+      return updatedAccounts;
+    });
+
+    // Otomatis sinkronkan pembayaran dan perubahan saldo ke Supabase
+    syncWithCloud(async () => {
+      const { error: payErr } = await supabase
+        .from('syahriah_payments')
+        .insert(mapSyahriahToDb(newPayment));
+      if (payErr) throw payErr;
+      if (updatedAccounts.length > 0) {
+        const { error: accErr } = await supabase
+          .from('cash_accounts')
+          .upsert(updatedAccounts.map(mapAccountToDb));
+        if (accErr) throw accErr;
+      }
     });
 
     return newPayment;
@@ -480,21 +849,30 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     const payment = syahriahPayments.find((p) => p.id === id);
     if (!payment) return;
 
-    // Background sync to Supabase
-    safeSupabase(supabase.from('syahriah_payments').delete().eq('id', id));
-
-    // Deduct from account balance
+    let updatedAccounts: CashAccount[] = [];
     setCashAccounts((prev) => {
-      const updated = prev.map((acc) =>
+      updatedAccounts = prev.map((acc) =>
         acc.id === payment.accountId
           ? { ...acc, balance: Math.max(0, acc.balance - payment.totalAmount) }
           : acc
       );
-      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
-      return updated;
+      return updatedAccounts;
     });
 
     setSyahriahPayments((prev) => prev.filter((p) => p.id !== id));
+
+    syncWithCloud(async () => {
+      const { error: payErr } = await supabase
+        .from('syahriah_payments')
+        .delete()
+        .eq('id', id);
+      if (payErr) throw payErr;
+      if (updatedAccounts.length > 0) {
+        await supabase
+          .from('cash_accounts')
+          .upsert(updatedAccounts.map(mapAccountToDb));
+      }
+    });
   };
 
   const addTransaction = (
@@ -517,12 +895,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setTransactions((prev) => [newTrx, ...prev]);
 
-    // Background sync to Supabase
-    safeSupabase(supabase.from('financial_transactions').insert(mapTransactionToDb(newTrx)));
-
-    // Update account balance
+    let updatedAccounts: CashAccount[] = [];
     setCashAccounts((prev) => {
-      const updated = prev.map((acc) => {
+      updatedAccounts = prev.map((acc) => {
         if (acc.id === trxData.accountId) {
           const newBalance =
             trxData.type === 'INCOME'
@@ -532,8 +907,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         return acc;
       });
-      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
-      return updated;
+      return updatedAccounts;
+    });
+
+    // Otomatis sinkronkan transaksi dan perubahan saldo ke Supabase
+    syncWithCloud(async () => {
+      const { error: trxErr } = await supabase
+        .from('financial_transactions')
+        .insert(mapTransactionToDb(newTrx));
+      if (trxErr) throw trxErr;
+      if (updatedAccounts.length > 0) {
+        const { error: accErr } = await supabase
+          .from('cash_accounts')
+          .upsert(updatedAccounts.map(mapAccountToDb));
+        if (accErr) throw accErr;
+      }
     });
 
     return newTrx;
@@ -543,12 +931,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     const trx = transactions.find((t) => t.id === id);
     if (!trx) return;
 
-    // Background sync to Supabase
-    safeSupabase(supabase.from('financial_transactions').delete().eq('id', id));
-
-    // Revert account balance
+    let updatedAccounts: CashAccount[] = [];
     setCashAccounts((prev) => {
-      const updated = prev.map((acc) => {
+      updatedAccounts = prev.map((acc) => {
         if (acc.id === trx.accountId) {
           const revertedBalance =
             trx.type === 'INCOME'
@@ -558,11 +943,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         return acc;
       });
-      safeSupabase(supabase.from('cash_accounts').upsert(updated.map(mapAccountToDb)));
-      return updated;
+      return updatedAccounts;
     });
 
     setTransactions((prev) => prev.filter((t) => t.id !== id));
+
+    syncWithCloud(async () => {
+      const { error: trxErr } = await supabase
+        .from('financial_transactions')
+        .delete()
+        .eq('id', id);
+      if (trxErr) throw trxErr;
+      if (updatedAccounts.length > 0) {
+        await supabase
+          .from('cash_accounts')
+          .upsert(updatedAccounts.map(mapAccountToDb));
+      }
+    });
   };
 
   const transferCash = (
@@ -584,33 +981,35 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         return acc;
       });
-      safeSupabase(
-        supabase.from('cash_accounts').upsert(updatedAccounts.map(mapAccountToDb))
-      );
       return updatedAccounts;
     });
 
     const fromAcc = cashAccounts.find((a) => a.id === fromId)?.name || fromId;
     const toAcc = cashAccounts.find((a) => a.id === toId)?.name || toId;
 
-    // Record internal transfer entry in transactions
     const now = new Date();
     const today = now.toISOString().split('T')[0];
 
-    // Log to Supabase cash_transfers table
     const transferRecordId = `trf-${Date.now()}`;
-    safeSupabase(
-      supabase.from('cash_transfers').insert({
-        id: transferRecordId,
-        date: today,
-        from_account_id: fromId,
-        to_account_id: toId,
-        amount,
-        description,
-        recorded_by: schoolProfile.treasurerName,
-        created_at: new Date().toISOString(),
-      })
-    );
+    const trfData = {
+      id: transferRecordId,
+      date: today,
+      from_account_id: fromId,
+      to_account_id: toId,
+      amount,
+      description,
+      recorded_by: schoolProfile.treasurerName,
+      created_at: new Date().toISOString(),
+    };
+
+    syncWithCloud(async () => {
+      await supabase.from('cash_transfers').insert(trfData);
+      if (updatedAccounts.length > 0) {
+        await supabase
+          .from('cash_accounts')
+          .upsert(updatedAccounts.map(mapAccountToDb));
+      }
+    });
 
     addTransaction({
       date: today,
@@ -641,10 +1040,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   const updateCashAccount = (updatedAcc: CashAccount) => {
     setCashAccounts((prev) => {
       const next = prev.map((a) => (a.id === updatedAcc.id ? updatedAcc : a));
-      safeSupabase(
-        supabase.from('cash_accounts').upsert(mapAccountToDb(updatedAcc))
-      );
       return next;
+    });
+
+    syncWithCloud(async () => {
+      const { error } = await supabase
+        .from('cash_accounts')
+        .upsert(mapAccountToDb(updatedAcc));
+      if (error) throw error;
     });
   };
 
@@ -657,17 +1060,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     };
     setCashAccounts((prev) => {
       const next = [...prev, newAcc];
-      safeSupabase(supabase.from('cash_accounts').upsert(mapAccountToDb(newAcc)));
       return next;
     });
+
+    syncWithCloud(async () => {
+      const { error } = await supabase
+        .from('cash_accounts')
+        .upsert(mapAccountToDb(newAcc));
+      if (error) throw error;
+    });
+
     return newAcc;
   };
 
   const deleteCashAccount = (id: string) => {
     setCashAccounts((prev) => {
       const next = prev.filter((a) => a.id !== id);
-      safeSupabase(supabase.from('cash_accounts').delete().eq('id', id));
       return next;
+    });
+
+    syncWithCloud(async () => {
+      const { error } = await supabase
+        .from('cash_accounts')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
     });
   };
 
@@ -832,6 +1249,45 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         if (Array.isArray(data.transactions)) {
           setTransactions(data.transactions);
         }
+
+        // Otomatis sinkronkan seluruh data import JSON ke Supabase
+        syncWithCloud(async () => {
+          await supabase
+            .from('school_profile')
+            .upsert(mapProfileToDb(data.schoolProfile));
+
+          if (data.cashAccounts.length > 0) {
+            await supabase
+              .from('cash_accounts')
+              .upsert(data.cashAccounts.map(mapAccountToDb));
+          }
+
+          if (data.students.length > 0) {
+            for (let i = 0; i < data.students.length; i += 50) {
+              const chunk = data.students.slice(i, i + 50);
+              await supabase.from('students').upsert(chunk.map(mapStudentToDb));
+            }
+          }
+
+          if (Array.isArray(data.syahriahPayments) && data.syahriahPayments.length > 0) {
+            for (let i = 0; i < data.syahriahPayments.length; i += 50) {
+              const chunk = data.syahriahPayments.slice(i, i + 50);
+              await supabase
+                .from('syahriah_payments')
+                .upsert(chunk.map(mapSyahriahToDb));
+            }
+          }
+
+          if (Array.isArray(data.transactions) && data.transactions.length > 0) {
+            for (let i = 0; i < data.transactions.length; i += 50) {
+              const chunk = data.transactions.slice(i, i + 50);
+              await supabase
+                .from('financial_transactions')
+                .upsert(chunk.map(mapTransactionToDb));
+            }
+          }
+        });
+
         return true;
       }
       return false;
@@ -879,6 +1335,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         transferCash,
         activeReceipt,
         setActiveReceipt,
+        cloudSyncStatus,
+        lastSyncedAt,
+        syncErrorMessage,
+        forceFullSync,
         getStudentPaidMonths,
         isMonthPaid,
         totalCashBalance,

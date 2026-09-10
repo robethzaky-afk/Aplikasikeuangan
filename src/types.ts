@@ -138,3 +138,5 @@ export interface SchoolProfile {
   academicYear: string; // e.g. "2024/2025"
   standardSyahriah: number; // e.g. 20000
 }
+
+export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline';

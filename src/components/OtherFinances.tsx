@@ -42,6 +42,9 @@ export const OtherFinances: React.FC<OtherFinancesProps> = ({
     schoolProfile,
     addTransaction,
     deleteTransaction,
+    isAdmin,
+    requireAdmin,
+    openAdminPrompt,
   } = useFinance();
 
   // Active filter tab
@@ -64,29 +67,31 @@ export const OtherFinances: React.FC<OtherFinancesProps> = ({
   });
 
   const openAddModal = (type: TransactionType) => {
-    setModalType(type);
-    const defaultCat =
-      type === 'INCOME'
-        ? OTHER_INCOME_CATEGORIES[0]
-        : EXPENSE_CATEGORIES[0];
+    requireAdmin(() => {
+      setModalType(type);
+      const defaultCat =
+        type === 'INCOME'
+          ? OTHER_INCOME_CATEGORIES[0]
+          : EXPENSE_CATEGORIES[0];
 
-    // default account: if BOS category, default to BRI BOS account
-    const defaultAccount =
-      defaultCat.id === 'DANA_BOS'
-        ? cashAccounts.find((a) => a.id === 'bank-bri-bos')?.id || cashAccounts[0]?.id
-        : cashAccounts[0]?.id;
+      // default account: if BOS category, default to BRI BOS account
+      const defaultAccount =
+        defaultCat.id === 'DANA_BOS'
+          ? cashAccounts.find((a) => a.id === 'bank-bri-bos')?.id || cashAccounts[0]?.id
+          : cashAccounts[0]?.id;
 
-    setFormData({
-      date: getTodayDateString(),
-      category: defaultCat.id,
-      categoryLabel: defaultCat.label,
-      amount: '',
-      accountId: defaultAccount || 'kas-tunai',
-      payerOrPayee: '',
-      description: '',
-      proofDocumentNo: '',
-    });
-    setIsModalOpen(true);
+      setFormData({
+        date: getTodayDateString(),
+        category: defaultCat.id,
+        categoryLabel: defaultCat.label,
+        amount: '',
+        accountId: defaultAccount || 'kas-tunai',
+        payerOrPayee: '',
+        description: '',
+        proofDocumentNo: '',
+      });
+      setIsModalOpen(true);
+    }, type === 'INCOME' ? 'Pencatatan Pemasukan Kas Baru' : 'Pencatatan Pengeluaran Kas Baru');
   };
 
   const handleCategoryChange = (catId: string) => {
@@ -376,13 +381,15 @@ export const OtherFinances: React.FC<OtherFinancesProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (
-                            window.confirm(
-                              `Hapus transaksi ${t.refNo} (${formatRupiah(t.amount)})? Saldo kas akan dipulihkan.`
-                            )
-                          ) {
-                            deleteTransaction(t.id);
-                          }
+                          requireAdmin(() => {
+                            if (
+                              window.confirm(
+                                `Hapus transaksi ${t.refNo} (${formatRupiah(t.amount)})? Saldo kas akan dipulihkan otomatis.`
+                              )
+                            ) {
+                              deleteTransaction(t.id);
+                            }
+                          }, `Hapus Transaksi Kas ${t.refNo}`);
                         }}
                         className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                         title="Hapus Transaksi"

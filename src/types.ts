@@ -140,3 +140,9 @@ export interface SchoolProfile {
 }
 
 export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline';
+
+export interface AdminPromptState {
+  isOpen: boolean;
+  description: string;
+  onSuccess?: () => void;
+}

@@ -7,6 +7,7 @@ import {
   SchoolProfile,
   AcademicMonth,
   CloudSyncStatus,
+  AdminPromptState,
 } from '../types';
 import {
   INITIAL_SCHOOL_PROFILE,
@@ -83,9 +84,37 @@ interface FinanceContextType {
   exportDataJson: () => string;
   importDataJson: (jsonString: string) => boolean;
   resetToDefault: () => void;
+  // Admin & Security Mode
+  isAdmin: boolean;
+  loginAdmin: (password: string) => { success: boolean; message: string };
+  logoutAdmin: () => void;
+  changeAdminPassword: (
+    oldPassword: string,
+    newPassword: string
+  ) => { success: boolean; message: string };
+  requireAdmin: (action: () => void, actionDescription?: string) => boolean;
+  adminPromptState: AdminPromptState | null;
+  openAdminPrompt: (description?: string, onSuccess?: () => void) => void;
+  closeAdminPrompt: () => void;
+  isDefaultPassword: boolean;
+  autoLockMinutes: number;
+  setAutoLockMinutes: (minutes: number) => void;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
+
+export const hashPassword = (pwd: string): string => {
+  let hash = 0;
+  const salted = `mi_sobo_secure_${pwd}_bendahara_2025`;
+  for (let i = 0; i < salted.length; i++) {
+    const char = salted.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return `hash_${Math.abs(hash).toString(16)}`;
+};
+
+export const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 const STORAGE_KEYS = {
   PROFILE: 'mi_keuangan_profile_v1',
@@ -93,6 +122,9 @@ const STORAGE_KEYS = {
   SYAHRIAH: 'mi_keuangan_syahriah_v1',
   ACCOUNTS: 'mi_keuangan_accounts_v1',
   TRANSACTIONS: 'mi_keuangan_transactions_v1',
+  ADMIN_PWD: 'mi_keuangan_admin_pwd_v1',
+  ADMIN_SESSION: 'mi_keuangan_admin_session_v1',
+  ADMIN_AUTOLOCK: 'mi_keuangan_admin_autolock_v1',
 };
 
 // Safe wrapper for fire-and-forget Supabase sync calls
@@ -250,6 +282,155 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const [activeReceipt, setActiveReceipt] =
     useState<SyahriahPaymentRecord | null>(null);
+
+  // Admin & Security Mode State
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(STORAGE_KEYS.ADMIN_SESSION) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [autoLockMinutes, setAutoLockMinutesState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ADMIN_AUTOLOCK);
+      return saved ? parseInt(saved, 10) : 30; // default 30 menit
+    } catch {
+      return 30;
+    }
+  });
+
+  const [adminPromptState, setAdminPromptState] = useState<AdminPromptState | null>(null);
+  const lastAdminActivityRef = React.useRef<number>(Date.now());
+
+  const [isDefaultPassword, setIsDefaultPassword] = useState<boolean>(() => {
+    try {
+      const savedHash = localStorage.getItem(STORAGE_KEYS.ADMIN_PWD);
+      return !savedHash || savedHash === hashPassword(DEFAULT_ADMIN_PASSWORD);
+    } catch {
+      return true;
+    }
+  });
+
+  const setAutoLockMinutes = (minutes: number) => {
+    setAutoLockMinutesState(minutes);
+    try {
+      localStorage.setItem(STORAGE_KEYS.ADMIN_AUTOLOCK, minutes.toString());
+    } catch {}
+  };
+
+  const loginAdmin = (password: string): { success: boolean; message: string } => {
+    try {
+      const savedHash =
+        localStorage.getItem(STORAGE_KEYS.ADMIN_PWD) ||
+        hashPassword(DEFAULT_ADMIN_PASSWORD);
+      if (hashPassword(password.trim()) === savedHash) {
+        setIsAdmin(true);
+        lastAdminActivityRef.current = Date.now();
+        sessionStorage.setItem(STORAGE_KEYS.ADMIN_SESSION, 'true');
+        return { success: true, message: 'Autentikasi Mode Admin Berhasil!' };
+      } else {
+        return {
+          success: false,
+          message: 'Password salah! Periksa kembali password admin Anda.',
+        };
+      }
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Gagal memproses autentikasi.' };
+    }
+  };
+
+  const logoutAdmin = () => {
+    setIsAdmin(false);
+    try {
+      sessionStorage.removeItem(STORAGE_KEYS.ADMIN_SESSION);
+    } catch {}
+  };
+
+  const changeAdminPassword = (
+    oldPassword: string,
+    newPassword: string
+  ): { success: boolean; message: string } => {
+    try {
+      const savedHash =
+        localStorage.getItem(STORAGE_KEYS.ADMIN_PWD) ||
+        hashPassword(DEFAULT_ADMIN_PASSWORD);
+      if (hashPassword(oldPassword.trim()) !== savedHash) {
+        return {
+          success: false,
+          message: 'Password lama tidak cocok! Mohon periksa kembali.',
+        };
+      }
+      if (!newPassword || newPassword.trim().length < 4) {
+        return {
+          success: false,
+          message: 'Password baru minimal harus 4 karakter.',
+        };
+      }
+      const newHash = hashPassword(newPassword.trim());
+      localStorage.setItem(STORAGE_KEYS.ADMIN_PWD, newHash);
+      setIsDefaultPassword(newPassword.trim() === DEFAULT_ADMIN_PASSWORD);
+      return { success: true, message: 'Password Admin berhasil diperbarui!' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Gagal menyimpan password baru.' };
+    }
+  };
+
+  const requireAdmin = (action: () => void, actionDescription?: string): boolean => {
+    lastAdminActivityRef.current = Date.now();
+    if (isAdmin) {
+      action();
+      return true;
+    }
+    setAdminPromptState({
+      isOpen: true,
+      description: actionDescription || 'Otorisasi Transaksi Keuangan Bendahara',
+      onSuccess: () => {
+        action();
+      },
+    });
+    return false;
+  };
+
+  const openAdminPrompt = (description?: string, onSuccess?: () => void) => {
+    setAdminPromptState({
+      isOpen: true,
+      description: description || 'Masuk Mode Admin Bendahara',
+      onSuccess,
+    });
+  };
+
+  const closeAdminPrompt = () => {
+    setAdminPromptState(null);
+  };
+
+  // Auto-lock timer effect untuk melindungi jika admin meninggalkan komputer
+  useEffect(() => {
+    if (!isAdmin || autoLockMinutes <= 0) return;
+
+    const interval = setInterval(() => {
+      const idleTime = Date.now() - lastAdminActivityRef.current;
+      if (idleTime >= autoLockMinutes * 60 * 1000) {
+        logoutAdmin();
+      }
+    }, 20000);
+
+    const handleUserActivity = () => {
+      lastAdminActivityRef.current = Date.now();
+    };
+
+    window.addEventListener('mousemove', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+    window.addEventListener('click', handleUserActivity);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+    };
+  }, [isAdmin, autoLockMinutes]);
 
   // Realtime Cloud Auto-Sync State
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('idle');
@@ -1349,6 +1530,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         exportDataJson,
         importDataJson,
         resetToDefault,
+        isAdmin,
+        loginAdmin,
+        logoutAdmin,
+        changeAdminPassword,
+        requireAdmin,
+        adminPromptState,
+        openAdminPrompt,
+        closeAdminPrompt,
+        isDefaultPassword,
+        autoLockMinutes,
+        setAutoLockMinutes,
       }}
     >
       {children}

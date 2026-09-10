@@ -29,6 +29,7 @@ export const GeneralLedger: React.FC = () => {
     syahriahPayments,
     transferCash,
     setActiveReceipt,
+    requireAdmin,
   } = useFinance();
 
   // Filters
@@ -179,7 +180,11 @@ export const GeneralLedger: React.FC = () => {
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => setIsTransferModalOpen(true)}
+            onClick={() => {
+              requireAdmin(() => {
+                setIsTransferModalOpen(true);
+              }, 'Pemindahan Kas / Tarik Tunai Antar Rekening');
+            }}
             className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
           >
             <ArrowLeftRight className="w-4 h-4" />

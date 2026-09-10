@@ -48,6 +48,8 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
     getStudentPaidMonths,
     isMonthPaid,
     setActiveReceipt,
+    isAdmin,
+    requireAdmin,
   } = useFinance();
 
   // Active sub-tab
@@ -94,21 +96,23 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
 
   // Open pay modal for specific student & pre-selected month
   const handleOpenPayForStudent = (student: Student, month?: AcademicMonth) => {
-    setSelectedStudentId(student.id);
-    const paid = getStudentPaidMonths(student.id);
+    requireAdmin(() => {
+      setSelectedStudentId(student.id);
+      const paid = getStudentPaidMonths(student.id);
 
-    if (month && !paid.includes(month)) {
-      setSelectedMonths([month]);
-    } else {
-      // Find first unpaid month
-      const firstUnpaid = ACADEMIC_MONTHS.find((m) => !paid.includes(m));
-      setSelectedMonths(firstUnpaid ? [firstUnpaid] : []);
-    }
-    setPaymentDate(getTodayDateString());
-    setSelectedAccountId('kas-tunai');
-    setPaymentMethod('TUNAI');
-    setNotes('');
-    setIsPayModalOpen(true);
+      if (month && !paid.includes(month)) {
+        setSelectedMonths([month]);
+      } else {
+        // Find first unpaid month
+        const firstUnpaid = ACADEMIC_MONTHS.find((m) => !paid.includes(m));
+        setSelectedMonths(firstUnpaid ? [firstUnpaid] : []);
+      }
+      setPaymentDate(getTodayDateString());
+      setSelectedAccountId('kas-tunai');
+      setPaymentMethod('TUNAI');
+      setNotes('');
+      setIsPayModalOpen(true);
+    }, `Pencatatan Pembayaran Syahriah (${student.name})`);
   };
 
   // Toggle month selection in modal
@@ -236,9 +240,11 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
             id="btn-open-syahriah-modal"
             type="button"
             onClick={() => {
-              setSelectedStudentId(students[0]?.id || '');
-              setSelectedMonths(['Juli']);
-              setIsPayModalOpen(true);
+              requireAdmin(() => {
+                setSelectedStudentId(students[0]?.id || '');
+                setSelectedMonths(['Juli']);
+                setIsPayModalOpen(true);
+              }, 'Pencatatan Pembayaran Syahriah');
             }}
             className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold text-sm shadow-sm transition-colors cursor-pointer flex items-center gap-2"
           >
@@ -663,9 +669,11 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm(`Hapus catatan pembayaran kwitansi ${payment.receiptNo}? Saldo kas akan disesuaikan.`)) {
-                              deleteSyahriahPayment(payment.id);
-                            }
+                            requireAdmin(() => {
+                              if (window.confirm(`Hapus catatan pembayaran kwitansi ${payment.receiptNo} (${payment.studentName})? Saldo kas akan disesuaikan otomatis.`)) {
+                                deleteSyahriahPayment(payment.id);
+                              }
+                            }, `Hapus Kwitansi ${payment.receiptNo} (${payment.studentName})`);
                           }}
                           className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                           title="Hapus Pembayaran"

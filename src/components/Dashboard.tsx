@@ -13,6 +13,8 @@ import {
   Receipt,
   PiggyBank,
   Plus,
+  ShieldCheck,
+  Lock,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { formatRupiah, formatDateIndo } from '../utils/formatters';
@@ -42,6 +44,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     transactions,
     isMonthPaid,
     setActiveReceipt,
+    isAdmin,
+    requireAdmin,
+    openAdminPrompt,
   } = useFinance();
 
   // Current month in Indonesian school year
@@ -118,7 +123,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               id="btn-dash-pay-syahriah"
               type="button"
-              onClick={onOpenQuickSyahriah}
+              onClick={() => requireAdmin(onOpenQuickSyahriah, 'Pencatatan Pembayaran Syahriah')}
               className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-amber-950 rounded-xl font-semibold text-sm shadow-md transition-all cursor-pointer flex items-center gap-2"
             >
               <GraduationCap className="w-4 h-4 text-amber-900" />
@@ -127,7 +132,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               id="btn-dash-income"
               type="button"
-              onClick={() => onOpenQuickTrx('INCOME')}
+              onClick={() => requireAdmin(() => onOpenQuickTrx('INCOME'), 'Pencatatan Pemasukan Kas')}
               className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-medium text-sm shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
             >
               <TrendingUp className="w-4 h-4 text-emerald-200" />
@@ -136,7 +141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               id="btn-dash-expense"
               type="button"
-              onClick={() => onOpenQuickTrx('EXPENSE')}
+              onClick={() => requireAdmin(() => onOpenQuickTrx('EXPENSE'), 'Pencatatan Pengeluaran Kas')}
               className="px-3.5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl font-medium text-sm border border-white/20 transition-all cursor-pointer flex items-center gap-1.5"
             >
               <TrendingDown className="w-4 h-4 text-rose-300" />
@@ -145,6 +150,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Admin Security Banner (shown when in Guest / Read-Only mode) */}
+      {!isAdmin && (
+        <div className="bg-amber-50 border border-amber-200/90 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 shrink-0 mt-0.5 sm:mt-0">
+              <Lock className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-amber-950">
+                Mode Akses Terproteksi (Hanya Lihat)
+              </h4>
+              <p className="text-xs text-amber-850">
+                Seluruh laporan, mutasi kas, dan rekap syahriah dapat dipantau. Untuk mencatat pembayaran atau mengubah data keuangan, masukkan password admin.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => openAdminPrompt('Buka Akses Penuh Admin Bendahara')}
+            className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shrink-0 self-start sm:self-center"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Buka Mode Admin</span>
+          </button>
+        </div>
+      )}
 
       {/* Main Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -271,7 +303,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onNavigate('settings', 'accounts')}
+              onClick={() => requireAdmin(() => onNavigate('settings', 'accounts'), 'Pengelolaan Rekening Bank & Kas')}
               className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs border border-emerald-200"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -325,7 +357,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <p className="text-[11px] text-gray-500 line-clamp-1 flex-1">{account.description || '-'}</p>
                   <button
                     type="button"
-                    onClick={() => onNavigate('settings', 'accounts')}
+                    onClick={() => requireAdmin(() => onNavigate('settings', 'accounts'), 'Pengelolaan Rekening Kas')}
                     className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline shrink-0 ml-2 cursor-pointer"
                   >
                     Edit / Hapus

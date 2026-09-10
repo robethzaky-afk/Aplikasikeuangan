@@ -33,6 +33,8 @@ export const StudentManager: React.FC = () => {
     clearAllStudents,
     bulkImportStudents,
     getStudentPaidMonths,
+    isAdmin,
+    requireAdmin,
   } = useFinance();
 
   const [selectedGrade, setSelectedGrade] = useState<number | 'ALL'>('ALL');
@@ -61,39 +63,43 @@ export const StudentManager: React.FC = () => {
   });
 
   const openAddModal = () => {
-    setEditingStudent(null);
-    setFormData({
-      nis: (2400 + students.length + 1).toString(),
-      nisn: '',
-      name: '',
-      gender: 'L',
-      grade: 1,
-      classGroup: 'Kelas 1',
-      guardianName: '',
-      guardianPhone: '',
-      monthlySyahriah: schoolProfile.standardSyahriah.toString(),
-      isExempt: false,
-      status: 'AKTIF',
-    });
-    setIsModalOpen(true);
+    requireAdmin(() => {
+      setEditingStudent(null);
+      setFormData({
+        nis: (2400 + students.length + 1).toString(),
+        nisn: '',
+        name: '',
+        gender: 'L',
+        grade: 1,
+        classGroup: 'Kelas 1',
+        guardianName: '',
+        guardianPhone: '',
+        monthlySyahriah: schoolProfile.standardSyahriah.toString(),
+        isExempt: false,
+        status: 'AKTIF',
+      });
+      setIsModalOpen(true);
+    }, 'Tambah Siswa Baru');
   };
 
   const openEditModal = (student: Student) => {
-    setEditingStudent(student);
-    setFormData({
-      nis: student.nis,
-      nisn: student.nisn || '',
-      name: student.name,
-      gender: student.gender,
-      grade: student.grade,
-      classGroup: student.classGroup,
-      guardianName: student.guardianName,
-      guardianPhone: student.guardianPhone,
-      monthlySyahriah: student.monthlySyahriah.toString(),
-      isExempt: student.isExempt,
-      status: student.status,
-    });
-    setIsModalOpen(true);
+    requireAdmin(() => {
+      setEditingStudent(student);
+      setFormData({
+        nis: student.nis,
+        nisn: student.nisn || '',
+        name: student.name,
+        gender: student.gender,
+        grade: student.grade,
+        classGroup: student.classGroup,
+        guardianName: student.guardianName,
+        guardianPhone: student.guardianPhone,
+        monthlySyahriah: student.monthlySyahriah.toString(),
+        isExempt: student.isExempt,
+        status: student.status,
+      });
+      setIsModalOpen(true);
+    }, `Ubah Data Siswa (${student.name})`);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -263,7 +269,11 @@ export const StudentManager: React.FC = () => {
           {/* Import Modal Button */}
           <button
             type="button"
-            onClick={() => setIsImportModalOpen(true)}
+            onClick={() => {
+              requireAdmin(() => {
+                setIsImportModalOpen(true);
+              }, 'Impor Massal Data Siswa');
+            }}
             className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl font-semibold text-xs shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
           >
             <Upload className="w-3.5 h-3.5 text-emerald-700" />
@@ -287,7 +297,11 @@ export const StudentManager: React.FC = () => {
           {students.length > 0 && (
             <button
               type="button"
-              onClick={() => setIsConfirmDeleteAllOpen(true)}
+              onClick={() => {
+                requireAdmin(() => {
+                  setIsConfirmDeleteAllOpen(true);
+                }, 'Hapus Seluruh Data Siswa');
+              }}
               title="Hapus semua data siswa dari kelas 1 sampai kelas 6"
               className="px-3 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-xl font-medium text-xs shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
             >
@@ -464,9 +478,11 @@ export const StudentManager: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm(`Hapus siswa ${student.name}?`)) {
-                              deleteStudent(student.id);
-                            }
+                            requireAdmin(() => {
+                              if (window.confirm(`Hapus siswa ${student.name}?`)) {
+                                deleteStudent(student.id);
+                              }
+                            }, `Hapus Data Siswa (${student.name})`);
                           }}
                           className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                           title="Hapus Siswa"

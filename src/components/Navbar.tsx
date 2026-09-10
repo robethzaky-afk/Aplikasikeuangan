@@ -16,6 +16,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   WifiOff,
+  ShieldCheck,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { formatRupiah } from '../utils/formatters';
@@ -48,6 +51,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     cloudSyncStatus,
     lastSyncedAt,
     forceFullSync,
+    isAdmin,
+    logoutAdmin,
+    openAdminPrompt,
+    requireAdmin,
   } = useFinance();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -153,6 +160,47 @@ export const Navbar: React.FC<NavbarProps> = ({
               />
             </button>
 
+            {/* Admin Security Mode Button */}
+            <button
+              id="btn-admin-mode-toggle"
+              type="button"
+              onClick={() => {
+                if (isAdmin) {
+                  if (confirm('Keluar dari Mode Admin dan kunci aplikasi ke Mode Tamu?')) {
+                    logoutAdmin();
+                  }
+                } else {
+                  openAdminPrompt('Masuk Mode Admin Bendahara');
+                }
+              }}
+              title={
+                isAdmin
+                  ? 'Mode Admin Aktif - Anda memiliki hak penuh untuk mencatat dan mengubah keuangan. Klik untuk mengunci aplikasi.'
+                  : 'Mode Terkunci - Pencatatan keuangan dilindungi password admin. Klik untuk membuka akses.'
+              }
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer border ${
+                isAdmin
+                  ? 'bg-emerald-900/90 hover:bg-emerald-950 border-emerald-400 text-emerald-100 shadow-xs'
+                  : 'bg-amber-950/80 hover:bg-amber-900 border-amber-400/70 text-amber-200'
+              }`}
+            >
+              {isAdmin ? (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                  <span className="hidden sm:inline">Admin:</span>
+                  <span className="font-bold text-emerald-200">Aktif</span>
+                  <span className="text-[10px] text-emerald-300 underline ml-0.5 hidden md:inline">Kunci</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="hidden sm:inline">Akses:</span>
+                  <span className="font-bold text-amber-200">Terkunci</span>
+                  <span className="text-[10px] text-amber-200 underline ml-0.5">Buka</span>
+                </>
+              )}
+            </button>
+
             <div className="hidden lg:flex flex-col text-right bg-emerald-900/60 px-3 py-1 rounded-lg border border-emerald-700/50">
               <span className="text-[11px] text-emerald-300">Total Saldo Kas Aktif</span>
               <span className="text-sm font-bold font-mono text-white">
@@ -163,7 +211,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-quick-syahriah-nav"
               type="button"
-              onClick={onOpenQuickSyahriah}
+              onClick={() => requireAdmin(onOpenQuickSyahriah, 'Pencatatan Pembayaran Syahriah')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-amber-400 hover:bg-amber-300 text-amber-950 rounded-lg shadow-sm transition-colors cursor-pointer"
             >
               <PlusCircle className="w-4 h-4 text-amber-900" />
@@ -173,7 +221,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-quick-trx-nav"
               type="button"
-              onClick={onOpenQuickTrx}
+              onClick={() => requireAdmin(onOpenQuickTrx, 'Pencatatan Transaksi Kas')}
               className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-sm transition-colors cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
@@ -231,22 +279,55 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div id="mobile-navigation-dropdown" className="lg:hidden bg-white border-t border-gray-200 px-4 py-3 space-y-1 shadow-lg animate-in slide-in-from-top-2 duration-150">
           <div className="pb-2 mb-2 border-b border-gray-100 flex justify-between items-center text-xs text-gray-500">
             <span>Tahun: <strong className="text-gray-800">{schoolProfile.academicYear}</strong></span>
-            <div
-              onClick={() => {
-                onTabChange('settings');
-                setMobileMenuOpen(false);
-              }}
-              className="flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-medium"
-            >
-              <Database className="w-3 h-3 text-emerald-600" />
-              <span>
-                {cloudSyncStatus === 'syncing'
-                  ? 'Menyinkron...'
-                  : cloudSyncStatus === 'synced'
-                  ? 'Singkron Otomatis'
-                  : 'Supabase Cloud'}
-              </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isAdmin) {
+                    if (confirm('Keluar dari Mode Admin?')) {
+                      logoutAdmin();
+                    }
+                  } else {
+                    openAdminPrompt('Masuk Mode Admin Bendahara');
+                  }
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer border ${
+                  isAdmin
+                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                    : 'bg-amber-100 text-amber-900 border-amber-300'
+                }`}
+              >
+                {isAdmin ? (
+                  <>
+                    <ShieldCheck className="w-3 h-3 text-emerald-700" />
+                    <span>Admin Aktif</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-3 h-3 text-amber-700" />
+                    <span>Terkunci</span>
+                  </>
+                )}
+              </button>
+
+              <div
+                onClick={() => {
+                  onTabChange('settings');
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-medium"
+              >
+                <Database className="w-3 h-3 text-emerald-600" />
+                <span>
+                  {cloudSyncStatus === 'syncing'
+                    ? 'Menyinkron...'
+                    : cloudSyncStatus === 'synced'
+                    ? 'Singkron Otomatis'
+                    : 'Supabase Cloud'}
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              </div>
             </div>
           </div>
           {navItems.map((item) => {
@@ -273,20 +354,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               type="button"
               onClick={() => {
-                onOpenQuickSyahriah();
+                requireAdmin(onOpenQuickSyahriah, 'Pencatatan Pembayaran Syahriah');
                 setMobileMenuOpen(false);
               }}
-              className="w-full py-2 px-3 text-xs font-semibold bg-amber-400 text-amber-950 rounded-lg text-center"
+              className="w-full py-2 px-3 text-xs font-semibold bg-amber-400 text-amber-950 rounded-lg text-center cursor-pointer"
             >
               + Bayar Syahriah
             </button>
             <button
               type="button"
               onClick={() => {
-                onOpenQuickTrx();
+                requireAdmin(onOpenQuickTrx, 'Pencatatan Transaksi Kas');
                 setMobileMenuOpen(false);
               }}
-              className="w-full py-2 px-3 text-xs font-semibold bg-emerald-700 text-white rounded-lg text-center"
+              className="w-full py-2 px-3 text-xs font-semibold bg-emerald-700 text-white rounded-lg text-center cursor-pointer"
             >
               + Catat Kas Lain
             </button>

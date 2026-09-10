@@ -18,6 +18,14 @@ import {
   Check,
   Plus,
   Trash2,
+  Lock,
+  Unlock,
+  Shield,
+  ShieldCheck,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Clock,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { SchoolProfile, CashAccount } from '../types';
@@ -25,7 +33,7 @@ import { formatRupiah } from '../utils/formatters';
 import { SupabaseManager } from './SupabaseManager';
 
 interface SettingsManagerProps {
-  initialTab?: 'supabase' | 'accounts' | 'profile';
+  initialTab?: 'supabase' | 'accounts' | 'profile' | 'security';
 }
 
 export const SettingsManager: React.FC<SettingsManagerProps> = ({
@@ -43,9 +51,17 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     exportDataJson,
     importDataJson,
     resetToDefault,
+    isAdmin,
+    requireAdmin,
+    openAdminPrompt,
+    logoutAdmin,
+    changeAdminPassword,
+    isDefaultPassword,
+    autoLockMinutes,
+    setAutoLockMinutes,
   } = useFinance();
 
-  const [activeTab, setActiveTab] = useState<'supabase' | 'accounts' | 'profile'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'supabase' | 'accounts' | 'profile' | 'security'>(initialTab);
 
   useEffect(() => {
     if (initialTab) {
@@ -75,11 +91,68 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
   // Clear financial data state
   const [isClearingFinancialData, setIsClearingFinancialData] = useState(false);
 
+  // Admin Security Password State
+  const [pwdForm, setPwdForm] = useState({
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [showOldPwd, setShowOldPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [pwdNotice, setPwdNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isSubmittingPwd, setIsSubmittingPwd] = useState(false);
+
+  const handleChangePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwdNotice(null);
+
+    if (pwdForm.newPassword.length < 4) {
+      setPwdNotice({
+        type: 'error',
+        message: 'Password baru minimal harus 4 karakter!',
+      });
+      return;
+    }
+
+    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+      setPwdNotice({
+        type: 'error',
+        message: 'Konfirmasi password baru tidak cocok!',
+      });
+      return;
+    }
+
+    setIsSubmittingPwd(true);
+    const res = changeAdminPassword(pwdForm.oldPassword, pwdForm.newPassword);
+    setIsSubmittingPwd(false);
+
+    if (res.success) {
+      setPwdNotice({
+        type: 'success',
+        message: res.message,
+      });
+      setPwdForm({
+        oldPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      setTimeout(() => setPwdNotice(null), 6000);
+    } else {
+      setPwdNotice({
+        type: 'error',
+        message: res.message,
+      });
+    }
+  };
+
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateSchoolProfile(formData);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    requireAdmin(() => {
+      updateSchoolProfile(formData);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    }, 'Simpan Perubahan Profil Madrasah');
   };
 
   const handleDownloadBackup = () => {
@@ -100,33 +173,37 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        const success = importDataJson(content);
-        if (success) {
-          setImportStatus('Data berhasil dipulihkan dari file cadangan!');
-          setTimeout(() => setImportStatus(null), 4000);
-        } else {
-          alert('Format file cadangan tidak valid atau rusak.');
+    requireAdmin(() => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (content) {
+          const success = importDataJson(content);
+          if (success) {
+            setImportStatus('Data berhasil dipulihkan dari file cadangan!');
+            setTimeout(() => setImportStatus(null), 4000);
+          } else {
+            alert('Format file cadangan tidak valid atau rusak.');
+          }
         }
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    }, 'Pulihkan Data Keuangan Dari Backup JSON');
   };
 
   const handleReset = () => {
-    if (
-      window.confirm(
-        "PERINGATAN: Apakah Anda yakin ingin mereset seluruh data aplikasi kembali ke data contoh awal MI Ma'arif Al Ihsan Soborejo?"
-      )
-    ) {
-      resetToDefault();
-      alert('Data berhasil direset ke kondisi awal.');
-      window.location.reload();
-    }
+    requireAdmin(() => {
+      if (
+        window.confirm(
+          "PERINGATAN: Apakah Anda yakin ingin mereset seluruh data aplikasi kembali ke data contoh awal MI Ma'arif Al Ihsan Soborejo?"
+        )
+      ) {
+        resetToDefault();
+        alert('Data berhasil direset ke kondisi awal.');
+        window.location.reload();
+      }
+    }, 'Reset Data ke Contoh Awal');
   };
 
   const handleCreateAccount = (e: React.FormEvent) => {
@@ -136,20 +213,22 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
       return;
     }
 
-    const created = addCashAccount(newAccountData);
-    setIsAddModalOpen(false);
-    setNewAccountData({
-      name: '',
-      bankName: '',
-      accountNumber: '',
-      type: 'BANK',
-      balance: 0,
-      description: '',
-    });
-    setAccountSaveNotice(
-      `Rekening "${created.name}" berhasil ditambahkan dan disinkronkan ke Supabase Cloud.`
-    );
-    setTimeout(() => setAccountSaveNotice(null), 5000);
+    requireAdmin(() => {
+      const created = addCashAccount(newAccountData);
+      setIsAddModalOpen(false);
+      setNewAccountData({
+        name: '',
+        bankName: '',
+        accountNumber: '',
+        type: 'BANK',
+        balance: 0,
+        description: '',
+      });
+      setAccountSaveNotice(
+        `Rekening "${created.name}" berhasil ditambahkan dan disinkronkan ke Supabase Cloud.`
+      );
+      setTimeout(() => setAccountSaveNotice(null), 5000);
+    }, 'Tambah Rekening Kas/Bank Baru');
   };
 
   const handleDeleteAccount = (account: CashAccount) => {
@@ -157,31 +236,35 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
       alert('Minimal harus tersisa satu akun kas/bank pada sistem.');
       return;
     }
-    if (
-      window.confirm(
-        `Apakah Anda yakin ingin menghapus rekening "${account.name}" (${account.bankName || 'Kas Tunai'})?\n\nRekening ini akan dihapus dari aplikasi dan database Supabase Cloud.`
-      )
-    ) {
-      deleteCashAccount(account.id);
-      if (editingAccount?.id === account.id) {
-        setEditingAccount(null);
+    requireAdmin(() => {
+      if (
+        window.confirm(
+          `Apakah Anda yakin ingin menghapus rekening "${account.name}" (${account.bankName || 'Kas Tunai'})?\n\nRekening ini akan dihapus dari aplikasi dan database Supabase Cloud.`
+        )
+      ) {
+        deleteCashAccount(account.id);
+        if (editingAccount?.id === account.id) {
+          setEditingAccount(null);
+        }
+        setAccountSaveNotice(`Rekening "${account.name}" berhasil dihapus.`);
+        setTimeout(() => setAccountSaveNotice(null), 5000);
       }
-      setAccountSaveNotice(`Rekening "${account.name}" berhasil dihapus.`);
-      setTimeout(() => setAccountSaveNotice(null), 5000);
-    }
+    }, `Hapus Rekening ${account.name}`);
   };
 
   const handleClearAllFinancials = async () => {
-    const confirmed = window.confirm(
-      `⚠️ KONFIRMASI PENGOSONGAN DATA KEUANGAN:\n\nApakah Anda yakin ingin MENGOSONGKAN SELURUH DATA KEUANGAN saat ini?\n\nYang akan dikosongkan:\n1. Seluruh transaksi Buku Kas Umum (BKU)\n2. Seluruh riwayat pembayaran syahriah / SPP siswa\n3. Seluruh mutasi kas antar-rekening\n4. Saldo seluruh rekening bank & kas diatur ke Rp 0\n\nCatatan: Data profil madrasah dan data siswa tetap aman tersimpan.`
-    );
-    if (!confirmed) return;
+    requireAdmin(async () => {
+      const confirmed = window.confirm(
+        `⚠️ KONFIRMASI PENGOSONGAN DATA KEUANGAN:\n\nApakah Anda yakin ingin MENGOSONGKAN SELURUH DATA KEUANGAN saat ini?\n\nYang akan dikosongkan:\n1. Seluruh transaksi Buku Kas Umum (BKU)\n2. Seluruh riwayat pembayaran syahriah / SPP siswa\n3. Seluruh mutasi kas antar-rekening\n4. Saldo seluruh rekening bank & kas diatur ke Rp 0\n\nCatatan: Data profil madrasah dan data siswa tetap aman tersimpan.`
+      );
+      if (!confirmed) return;
 
-    setIsClearingFinancialData(true);
-    const res = await clearAllFinancialData();
-    setIsClearingFinancialData(false);
-    setAccountSaveNotice(res.message);
-    setTimeout(() => setAccountSaveNotice(null), 7000);
+      setIsClearingFinancialData(true);
+      const res = await clearAllFinancialData();
+      setIsClearingFinancialData(false);
+      setAccountSaveNotice(res.message);
+      setTimeout(() => setAccountSaveNotice(null), 7000);
+    }, 'Kosongkan Seluruh Data Keuangan');
   };
 
   return (
@@ -243,6 +326,33 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
             <School className="w-4 h-4 text-emerald-600" />
             <span>Profil & Backup Lokal</span>
           </button>
+
+          <button
+            id="tab-btn-security"
+            type="button"
+            onClick={() => setActiveTab('security')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'security'
+                ? 'bg-white text-emerald-800 shadow-xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            {isAdmin ? (
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <Lock className="w-4 h-4 text-amber-600" />
+            )}
+            <span>Keamanan & Mode Admin</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                isAdmin
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {isAdmin ? 'Aktif' : 'Terkunci'}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -283,7 +393,11 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => {
+                  requireAdmin(() => {
+                    setIsAddModalOpen(true);
+                  }, 'Tambah Rekening Kas/Bank Baru');
+                }}
                 className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow-xs"
               >
                 <Plus className="w-4 h-4" />
@@ -409,7 +523,11 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setEditingAccount({ ...account })}
+                        onClick={() => {
+                          requireAdmin(() => {
+                            setEditingAccount({ ...account });
+                          }, `Ubah Konfigurasi Rekening ${account.name}`);
+                        }}
                         className="px-2.5 py-1.5 bg-gray-100 hover:bg-emerald-50 hover:text-emerald-800 text-gray-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
                       >
                         <Edit className="w-3.5 h-3.5" />
@@ -1086,6 +1204,310 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
           </div>
         </div>
       </div>
+      )}
+
+      {/* Security & Admin Mode Tab View */}
+      {activeTab === 'security' && (
+        <div className="space-y-6">
+          {/* Security Status Hero Card */}
+          <div
+            className={`p-6 rounded-2xl border transition-all ${
+              isAdmin
+                ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/60 border-emerald-300 shadow-sm'
+                : 'bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100/60 border-amber-300 shadow-sm'
+            }`}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+              <div className="flex items-start gap-4">
+                <div
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${
+                    isAdmin
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-amber-600 text-white'
+                  }`}
+                >
+                  {isAdmin ? (
+                    <ShieldCheck className="w-7 h-7" />
+                  ) : (
+                    <Lock className="w-7 h-7" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                        isAdmin
+                          ? 'bg-emerald-200 text-emerald-950'
+                          : 'bg-amber-200 text-amber-950'
+                      }`}
+                    >
+                      {isAdmin ? 'Mode Admin Aktif' : 'Aplikasi Terkunci (Mode Tamu)'}
+                    </span>
+                    {isDefaultPassword && (
+                      <span className="text-xs bg-rose-100 text-rose-800 px-2 py-0.5 rounded-md font-semibold">
+                        Password Bawaan
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 mt-1.5">
+                    {isAdmin
+                      ? 'Hak Akses Penuh Bendahara Aktif'
+                      : 'Transaksi & Pencatatan Keuangan Dilindungi'}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-gray-600 mt-1 max-w-2xl leading-relaxed">
+                    {isAdmin
+                      ? 'Anda dapat mencatat pembayaran syahriah, transaksi kas umum, memutasi dana kas, mengubah data siswa, dan mengelola rekening bank.'
+                      : 'Siapapun dapat melihat saldo dan mencetak laporan, namun setiap aksi pencatatan atau perubahan transaksi keuangan wajib memasukkan password admin.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0 flex items-center gap-2 self-end sm:self-center">
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Keluar dari Mode Admin dan kunci aplikasi ke Mode Tamu sekarang?')) {
+                        logoutAdmin();
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 hover:border-rose-300 rounded-xl text-xs sm:text-sm font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-2"
+                  >
+                    <Lock className="w-4 h-4 text-rose-600" />
+                    <span>Kunci Aplikasi Sekarang</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openAdminPrompt('Aktivasi Hak Akses Admin Bendahara')}
+                    className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-sm transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    <Unlock className="w-4 h-4" />
+                    <span>Buka Kunci Akses Admin</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column: Change Password Form (7 cols) */}
+            <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-5">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-emerald-700" />
+                  <span>Ubah Password Admin Bendahara</span>
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Perbarui kata sandi admin untuk menjaga keamanan buku kas dan data pembayaran siswa.
+                </p>
+              </div>
+
+              {isDefaultPassword && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Peringatan Keamanan:</span> Saat ini aplikasi masih menggunakan kata sandi bawaan pabrik (<code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold">admin123</code>). Segera ubah password Anda di bawah ini!
+                  </div>
+                </div>
+              )}
+
+              {pwdNotice && (
+                <div
+                  className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+                    pwdNotice.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                      : 'bg-rose-50 border-rose-200 text-rose-900'
+                  }`}
+                >
+                  {pwdNotice.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <span>{pwdNotice.message}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
+                {/* Old Password */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    Password Lama Saat Ini *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showOldPwd ? 'text' : 'password'}
+                      required
+                      placeholder="Masukkan password saat ini (default: admin123)"
+                      value={pwdForm.oldPassword}
+                      onChange={(e) => setPwdForm({ ...pwdForm, oldPassword: e.target.value })}
+                      className="w-full pl-3 pr-10 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOldPwd(!showOldPwd)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                      tabIndex={-1}
+                    >
+                      {showOldPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* New Password */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Password Baru *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPwd ? 'text' : 'password'}
+                        required
+                        minLength={4}
+                        placeholder="Minimal 4 karakter"
+                        value={pwdForm.newPassword}
+                        onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+                        className="w-full pl-3 pr-10 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPwd(!showNewPwd)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                        tabIndex={-1}
+                      >
+                        {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm New Password */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Konfirmasi Password Baru *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPwd ? 'text' : 'password'}
+                        required
+                        minLength={4}
+                        placeholder="Ketik ulang password baru"
+                        value={pwdForm.confirmPassword}
+                        onChange={(e) => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+                        className="w-full pl-3 pr-10 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPwd(!showConfirmPwd)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                        tabIndex={-1}
+                      >
+                        {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between">
+                  <span className="text-[11px] text-gray-500">
+                    Password disimpan terenkripsi secara aman pada perangkat lokal bendahara.
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingPwd}
+                    className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{isSubmittingPwd ? 'Menyimpan...' : 'Perbarui Password Admin'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Right Column: Auto-Lock & Privileges (5 cols) */}
+            <div className="lg:col-span-5 space-y-6">
+              {/* Inactivity Auto-Lock Setting Card */}
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-emerald-700" />
+                    <span>Kunci Otomatis (Auto-Lock)</span>
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                    Sistem akan secara otomatis kembali ke Mode Tamu jika tidak ada aktivitas dalam waktu yang ditentukan untuk mencegah akses tanpa izin saat komputer ditinggal.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-gray-700">
+                    Batas Waktu Ketidakaktifan:
+                  </label>
+                  <select
+                    value={autoLockMinutes}
+                    onChange={(e) => {
+                      const mins = Number(e.target.value);
+                      setAutoLockMinutes(mins);
+                    }}
+                    className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm bg-white font-medium focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value={5}>5 Menit (Sangat Aman)</option>
+                    <option value={10}>10 Menit</option>
+                    <option value={15}>15 Menit</option>
+                    <option value={30}>30 Menit (Standar Rekomendasi)</option>
+                    <option value={60}>60 Menit (1 Jam)</option>
+                    <option value={0}>Nonaktif (Hanya Kunci Manual)</option>
+                  </select>
+                  <p className="text-[11px] text-emerald-700 font-medium">
+                    {autoLockMinutes === 0
+                      ? '⚠️ Auto-lock dinonaktifkan. Pastikan mengunci aplikasi secara manual.'
+                      : `✓ Aplikasi akan mengunci otomatis setelah ${autoLockMinutes} menit tanpa aktivitas mouse/keyboard.`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Security Privileges Card */}
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-3">
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-emerald-700" />
+                  <span>Daftar Hak Akses & Proteksi Data</span>
+                </h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                    <span className="text-gray-700 font-medium">Pencatatan & Hapus Syahriah</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                      Dilindungi Password
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                    <span className="text-gray-700 font-medium">Kas Masuk, Kas Keluar & Mutasi</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                      Dilindungi Password
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                    <span className="text-gray-700 font-medium">Tambah/Ubah Rekening Bank</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                      Dilindungi Password
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                    <span className="text-gray-700 font-medium">Kelola & Impor Data Santri</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                      Dilindungi Password
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                    <span className="text-gray-700 font-medium">Lihat Saldo & Cetak Laporan BKU</span>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">
+                      Mode Tamu (Bebas)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

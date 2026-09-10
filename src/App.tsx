@@ -14,16 +14,17 @@ import { StudentManager } from './components/StudentManager';
 import { FinancialReports } from './components/FinancialReports';
 import { SettingsManager } from './components/SettingsManager';
 import { ReceiptModal } from './components/ReceiptModal';
+import { AdminAuthModal } from './components/AdminAuthModal';
 import { School, Heart, ShieldCheck } from 'lucide-react';
 
 function MainContent() {
   const { activeReceipt, setActiveReceipt, schoolProfile } = useFinance();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
-  const [settingsSubTab, setSettingsSubTab] = useState<'supabase' | 'accounts' | 'profile'>('accounts');
+  const [settingsSubTab, setSettingsSubTab] = useState<'supabase' | 'accounts' | 'profile' | 'security'>('accounts');
   const [openSyahriahModalTrigger, setOpenSyahriahModalTrigger] = useState(false);
   const [openTrxTypeTrigger, setOpenTrxTypeTrigger] = useState<'INCOME' | 'EXPENSE' | null>(null);
 
-  const handleNavigate = (tab: NavTab, subTab?: 'supabase' | 'accounts' | 'profile') => {
+  const handleNavigate = (tab: NavTab, subTab?: 'supabase' | 'accounts' | 'profile' | 'security') => {
     if (subTab) {
       setSettingsSubTab(subTab);
     }
@@ -87,6 +88,9 @@ function MainContent() {
           onClose={() => setActiveReceipt(null)}
         />
       )}
+
+      {/* Global Admin Authentication Modal */}
+      <AdminAuthModal />
 
       {/* Footer - hidden when printing */}
       <footer className="print:hidden border-t border-gray-200 bg-white py-6 mt-12">

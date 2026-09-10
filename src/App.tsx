@@ -19,8 +19,16 @@ import { School, Heart, ShieldCheck } from 'lucide-react';
 function MainContent() {
   const { activeReceipt, setActiveReceipt, schoolProfile } = useFinance();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [settingsSubTab, setSettingsSubTab] = useState<'supabase' | 'accounts' | 'profile'>('accounts');
   const [openSyahriahModalTrigger, setOpenSyahriahModalTrigger] = useState(false);
   const [openTrxTypeTrigger, setOpenTrxTypeTrigger] = useState<'INCOME' | 'EXPENSE' | null>(null);
+
+  const handleNavigate = (tab: NavTab, subTab?: 'supabase' | 'accounts' | 'profile') => {
+    if (subTab) {
+      setSettingsSubTab(subTab);
+    }
+    setActiveTab(tab);
+  };
 
   const handleOpenQuickSyahriah = () => {
     setActiveTab('syahriah');
@@ -40,7 +48,7 @@ function MainContent() {
       {/* Navbar Component */}
       <Navbar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => handleNavigate(tab)}
         onOpenQuickSyahriah={handleOpenQuickSyahriah}
         onOpenQuickTrx={() => handleOpenQuickTrx('INCOME')}
       />
@@ -49,7 +57,7 @@ function MainContent() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {activeTab === 'dashboard' && (
           <Dashboard
-            onNavigate={setActiveTab}
+            onNavigate={handleNavigate}
             onOpenQuickSyahriah={handleOpenQuickSyahriah}
             onOpenQuickTrx={handleOpenQuickTrx}
           />
@@ -69,7 +77,7 @@ function MainContent() {
 
         {activeTab === 'reports' && <FinancialReports />}
 
-        {activeTab === 'settings' && <SettingsManager />}
+        {activeTab === 'settings' && <SettingsManager initialTab={settingsSubTab} />}
       </main>
 
       {/* Global Receipt Modal */}

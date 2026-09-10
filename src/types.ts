@@ -53,7 +53,7 @@ export interface SyahriahPaymentRecord {
   amountPerMonth: number;
   totalAmount: number;
   paymentDate: string; // YYYY-MM-DD
-  paymentMethod: 'TUNAI' | 'TRANSFER_BSI' | 'TRANSFER_BRI';
+  paymentMethod: 'TUNAI' | 'TRANSFER_BSI' | 'TRANSFER_BRI' | string;
   accountId: string; // Destination cash account
   receivedBy: string;
   notes?: string;

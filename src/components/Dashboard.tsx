@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Receipt,
   PiggyBank,
+  Plus,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { formatRupiah, formatDateIndo } from '../utils/formatters';
@@ -19,7 +20,7 @@ import { NavTab } from './Navbar';
 import { ACADEMIC_MONTHS, AcademicMonth } from '../types';
 
 interface DashboardProps {
-  onNavigate: (tab: NavTab) => void;
+  onNavigate: (tab: NavTab, subTab?: 'supabase' | 'accounts' | 'profile') => void;
   onOpenQuickSyahriah: () => void;
   onOpenQuickTrx: (type?: 'INCOME' | 'EXPENSE') => void;
 }
@@ -262,19 +263,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Rincian Akun Kas Madrasah */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h3 className="text-base font-bold text-gray-900">Rincian Pos Kas & Rekening Bank</h3>
             <p className="text-xs text-gray-500">Saldo riil yang tersimpan di kas tunai dan rekening resmi madrasah</p>
           </div>
-          <button
-            type="button"
-            onClick={() => onNavigate('bku')}
-            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
-          >
-            <span>Mutasi / Pindah Kas</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigate('settings', 'accounts')}
+              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs border border-emerald-200"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah / Kelola Bank</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('bku')}
+              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <span>Mutasi Kas</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -283,31 +294,43 @@ export const Dashboard: React.FC<DashboardProps> = ({
             return (
               <div
                 key={account.id}
-                className="p-4 rounded-xl border border-gray-200/80 bg-gray-50/50 hover:bg-white hover:border-emerald-300 transition-all shadow-2xs"
+                className="p-4 rounded-xl border border-gray-200/80 bg-gray-50/50 hover:bg-white hover:border-emerald-300 transition-all shadow-2xs flex flex-col justify-between"
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                    {isCash ? 'Kas Tunai' : 'Rekening Bank'}
-                  </span>
-                  {isCash ? (
-                    <PiggyBank className="w-5 h-5 text-emerald-600" />
-                  ) : (
-                    <Landmark className="w-5 h-5 text-blue-600" />
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                      {isCash ? 'Kas Tunai' : 'Rekening Bank'}
+                    </span>
+                    {isCash ? (
+                      <PiggyBank className="w-5 h-5 text-emerald-600" />
+                    ) : (
+                      <Landmark className="w-5 h-5 text-blue-600" />
+                    )}
+                  </div>
+                  <h4 className="text-sm font-bold text-gray-900 mt-2">{account.name}</h4>
+                  {account.accountNumber && (
+                    <p className="text-xs font-mono text-gray-500">
+                      {account.bankName} • {account.accountNumber}
+                    </p>
                   )}
+                  <div className="mt-3">
+                    <span className="text-xs text-gray-500">Saldo Saat Ini:</span>
+                    <p className="text-xl font-bold font-mono text-emerald-800">
+                      {formatRupiah(account.balance)}
+                    </p>
+                  </div>
                 </div>
-                <h4 className="text-sm font-bold text-gray-900 mt-2">{account.name}</h4>
-                {account.accountNumber && (
-                  <p className="text-xs font-mono text-gray-500">
-                    {account.bankName} • {account.accountNumber}
-                  </p>
-                )}
-                <div className="mt-3">
-                  <span className="text-xs text-gray-500">Saldo Saat Ini:</span>
-                  <p className="text-xl font-bold font-mono text-emerald-800">
-                    {formatRupiah(account.balance)}
-                  </p>
+
+                <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between">
+                  <p className="text-[11px] text-gray-500 line-clamp-1 flex-1">{account.description || '-'}</p>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('settings', 'accounts')}
+                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline shrink-0 ml-2 cursor-pointer"
+                  >
+                    Edit / Hapus
+                  </button>
                 </div>
-                <p className="text-[11px] text-gray-500 mt-1 line-clamp-1">{account.description}</p>
               </div>
             );
           })}

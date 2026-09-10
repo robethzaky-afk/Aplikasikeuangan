@@ -48,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'bku', label: 'Buku Kas Umum (BKU)', icon: BookOpenCheck },
     { id: 'students', label: 'Data Siswa', icon: Users },
     { id: 'reports', label: 'Laporan & Rekap', icon: FileText },
-    { id: 'settings', label: 'Pengaturan & Cloud DB', icon: Database },
+    { id: 'settings', label: 'Pengaturan & Rekening Bank', icon: Settings },
   ];
 
   const handleTabClick = (tabId: NavTab) => {

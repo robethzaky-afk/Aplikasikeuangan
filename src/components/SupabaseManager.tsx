@@ -16,6 +16,7 @@ import {
   Layers,
   Sparkles,
   Info,
+  Landmark,
 } from 'lucide-react';
 import {
   supabase,
@@ -44,6 +45,7 @@ export const SupabaseManager: React.FC = () => {
     syahriahPayments,
     cashAccounts,
     transactions,
+    syncFinancialsWithCloud,
   } = useFinance();
 
   const [status, setStatus] = useState<{
@@ -89,6 +91,32 @@ export const SupabaseManager: React.FC = () => {
     setTimeout(() => setCopiedSql(false), 3000);
   };
 
+  // Sinkronisasi Khusus: Nama Bank & Keuangan Bawaan Saja
+  const handleSyncFinancialsOnly = async () => {
+    if (!status.tablesFound && !status.connected) {
+      alert('Koneksi Supabase belum aktif. Pastikan tabel telah dibuat di SQL Editor.');
+      return;
+    }
+
+    setSyncLoading('upload');
+    setSyncNotification(null);
+
+    try {
+      const result = await syncFinancialsWithCloud();
+      setSyncNotification({
+        type: result.success ? 'success' : 'error',
+        message: result.message,
+      });
+    } catch (err: any) {
+      setSyncNotification({
+        type: 'error',
+        message: `Gagal sinkronisasi: ${err.message || String(err)}`,
+      });
+    } finally {
+      setSyncLoading(null);
+    }
+  };
+
   // Upload Local Data to Supabase
   const handleUploadToCloud = async () => {
     if (!status.tablesFound) {
@@ -102,6 +130,9 @@ export const SupabaseManager: React.FC = () => {
     setSyncNotification(null);
 
     try {
+      // 0. Bersihkan legacy 'bank-bri' dari Supabase jika ada
+      await supabase.from('cash_accounts').delete().eq('id', 'bank-bri');
+
       // 1. Upload School Profile
       const { error: profileError } = await supabase
         .from('school_profile')
@@ -113,7 +144,7 @@ export const SupabaseManager: React.FC = () => {
         const { error: accError } = await supabase
           .from('cash_accounts')
           .upsert(cashAccounts.map(mapAccountToDb));
-        if (accError) throw new Error(`Akun Kas: ${accError.message}`);
+        if (accError) throw new Error(`Akun Kas & Bank: ${accError.message}`);
       }
 
       // 3. Upload Students
@@ -590,14 +621,79 @@ export const SupabaseManager: React.FC = () => {
 
         {/* Right Column: SQL Schema Code & Sync Actions (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
+          {/* Card Khusus: Sinkronisasi Nama Bank & Keuangan Bawaan */}
+          <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-white rounded-xl border border-emerald-300/80 shadow-xs p-5 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shadow-xs">
+                  <Landmark className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">
+                    Sinkronisasi Nama Bank & Keuangan Bawaan
+                  </h3>
+                  <p className="text-[11px] text-emerald-800">
+                    Pos rekening resmi & transaksi BKU bawaan
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900">
+                Ready
+              </span>
+            </div>
+
+            {/* List 3 Akun Kas & Bank */}
+            <div className="space-y-1.5 text-xs bg-white/80 p-3 rounded-lg border border-emerald-200">
+              <div className="text-[11px] font-semibold text-gray-600 mb-1">
+                3 Rekening Resmi Terdaftar:
+              </div>
+              {cashAccounts.map((acc) => (
+                <div
+                  key={acc.id}
+                  className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0"
+                >
+                  <div>
+                    <span className="font-bold text-gray-800">{acc.name}</span>
+                    {acc.accountNumber && (
+                      <span className="text-[10px] text-gray-500 ml-1.5 font-mono">
+                        ({acc.bankName} • {acc.accountNumber})
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-mono font-bold text-emerald-800">
+                    Rp {acc.balance.toLocaleString('id-ID')}
+                  </span>
+                </div>
+              ))}
+              <div className="pt-2 mt-1 border-t border-dashed border-gray-200 flex items-center justify-between text-[11px] text-gray-600 font-medium">
+                <span>{transactions.length} Transaksi BKU Bawaan</span>
+                <span className="text-emerald-700 font-semibold">Siap sinkron ke Cloud</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSyncFinancialsOnly}
+              disabled={syncLoading !== null}
+              className="w-full py-2.5 px-4 bg-emerald-800 hover:bg-emerald-900 active:scale-[0.99] disabled:opacity-50 text-white rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncLoading === 'upload' ? 'animate-spin' : ''}`} />
+              <span>
+                {syncLoading === 'upload'
+                  ? 'Sedang Menyinkronkan...'
+                  : 'Sinkronkan Nama Bank & Keuangan ke Supabase Sekarang'}
+              </span>
+            </button>
+          </div>
+
           {/* Sync Action Box */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-xs p-5 space-y-3">
             <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
               <UploadCloud className="w-4 h-4 text-emerald-700" />
-              <span>Sinkronisasi Data Cloud</span>
+              <span>Sinkronisasi Seluruh Data Cloud</span>
             </h3>
             <p className="text-xs text-gray-500 leading-relaxed">
-              Kirimkan data keuangan madrasah (siswa, pembayaran syahriah, saldo kas) ke cloud Supabase atau tarik data terbaru.
+              Kirimkan seluruh data (siswa, pembayaran syahriah, akun bank, dan transaksi) ke cloud Supabase atau tarik data terbaru.
             </p>
 
             <div className="space-y-2.5 pt-1">
@@ -611,7 +707,7 @@ export const SupabaseManager: React.FC = () => {
                 <span>
                   {syncLoading === 'upload'
                     ? 'Sedang Mengunggah...'
-                    : 'Unggah Data Lokal ke Cloud Supabase'}
+                    : 'Unggah Seluruh Data Lokal ke Cloud Supabase'}
                 </span>
               </button>
 

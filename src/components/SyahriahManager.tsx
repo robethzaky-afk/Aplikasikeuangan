@@ -62,7 +62,7 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [selectedMonths, setSelectedMonths] = useState<AcademicMonth[]>([]);
   const [paymentDate, setPaymentDate] = useState(getTodayDateString());
-  const [paymentMethod, setPaymentMethod] = useState<'TUNAI' | 'TRANSFER_BSI' | 'TRANSFER_BRI'>('TUNAI');
+  const [paymentMethod, setPaymentMethod] = useState<string>('TUNAI');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('kas-tunai');
   const [notes, setNotes] = useState('');
 
@@ -807,17 +807,29 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
                   <select
                     value={paymentMethod}
                     onChange={(e) => {
-                      const val = e.target.value as 'TUNAI' | 'TRANSFER_BSI' | 'TRANSFER_BRI';
+                      const val = e.target.value;
                       setPaymentMethod(val);
-                      if (val === 'TUNAI') setSelectedAccountId('kas-tunai');
-                      if (val === 'TRANSFER_BSI') setSelectedAccountId('bank-bsi');
-                      if (val === 'TRANSFER_BRI') setSelectedAccountId('bank-bri-bos');
+                      if (val === 'TUNAI') {
+                        const cashAcc = cashAccounts.find((a) => a.type === 'CASH');
+                        if (cashAcc) setSelectedAccountId(cashAcc.id);
+                      }
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                   >
                     <option value="TUNAI">Uang Tunai (Kas Bendahara)</option>
-                    <option value="TRANSFER_BSI">Transfer BSI Madrasah</option>
-                    <option value="TRANSFER_BRI">Transfer Rekening BRI</option>
+                    {cashAccounts
+                      .filter((a) => a.type === 'BANK')
+                      .map((b) => (
+                        <option
+                          key={b.id}
+                          value={`TRANSFER_${b.bankName ? b.bankName.toUpperCase().replace(/\s+/g, '_') : b.name.toUpperCase().replace(/\s+/g, '_')}`}
+                        >
+                          Transfer {b.bankName || b.name}
+                        </option>
+                      ))}
+                    {cashAccounts.every((a) => a.type !== 'BANK') && (
+                      <option value="TRANSFER_BANK">Transfer Bank</option>
+                    )}
                   </select>
                 </div>
               </div>
@@ -825,16 +837,27 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
               {/* Destination Cash Account */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Masuk ke Pos Kas / Rekening:
+                  Masuk ke Pos Kas / Rekening Penerima:
                 </label>
                 <select
                   value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  onChange={(e) => {
+                    const accId = e.target.value;
+                    setSelectedAccountId(accId);
+                    const acc = cashAccounts.find((a) => a.id === accId);
+                    if (acc?.type === 'CASH') {
+                      setPaymentMethod('TUNAI');
+                    } else if (acc?.type === 'BANK') {
+                      setPaymentMethod(
+                        `TRANSFER_${acc.bankName ? acc.bankName.toUpperCase().replace(/\s+/g, '_') : acc.name.toUpperCase().replace(/\s+/g, '_')}`
+                      );
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                 >
                   {cashAccounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>
-                      {acc.name} (Saldo: {formatRupiah(acc.balance)})
+                      {acc.name} {acc.accountNumber ? `(${acc.bankName || 'Bank'} - ${acc.accountNumber})` : '(Kas Tunai)'} — Saldo: {formatRupiah(acc.balance)}
                     </option>
                   ))}
                 </select>

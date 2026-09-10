@@ -161,7 +161,7 @@ DROP POLICY IF EXISTS "Public full access cash_transfers" ON public.cash_transfe
 CREATE POLICY "Public full access cash_transfers" ON public.cash_transfers FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ====================================================================
--- DATA AWAL STANDAR MADRASAH & AKUN KAS
+-- DATA AWAL STANDAR MADRASAH, REKENING BANK & KEUANGAN BAWAAN
 -- ====================================================================
 
 -- Data Profil Default
@@ -179,22 +179,57 @@ INSERT INTO public.school_profile (
     'Kabupaten Temanggung',
     'Jawa Tengah',
     '56272',
-    '0852-9012-3456',
+    '0852-9214-8890',
     'MUIN, S.Pd.I',
     '197804152007011018',
     'FATHURRAZAQ, S.Pd.I',
     '2024/2025',
     20000
 ) ON CONFLICT (id) DO UPDATE SET
-    standard_syahriah = 20000;
+    standard_syahriah = 20000,
+    headmaster_name = 'MUIN, S.Pd.I',
+    treasurer_name = 'FATHURRAZAQ, S.Pd.I';
 
--- Rekening & Kas
+-- Hapus id akun lawas jika ada
+DELETE FROM public.cash_accounts WHERE id = 'bank-bri';
+
+-- 3 Akun Rekening Bank & Kas Resmi Madrasah
 INSERT INTO public.cash_accounts (id, name, account_number, bank_name, type, balance, description)
 VALUES 
-    ('kas-tunai', 'Kas Tunai Bendahara', '-', 'Tunai / Cash on Hand', 'CASH', 0, 'Uang tunai fisik di brankas bendahara'),
-    ('bank-bsi', 'Rekening BSI Operasional', '7145892011', 'Bank Syariah Indonesia (BSI)', 'BANK', 0, 'Rekening resmi operasional madrasah & SPP'),
-    ('bank-bri', 'Rekening BRI Madrasah', '0129-01-002845-50-8', 'Bank Rakyat Indonesia (BRI)', 'BANK', 0, 'Rekening penampungan dana BOS')
-ON CONFLICT (id) DO NOTHING;
+    ('kas-tunai', 'Kas Tunai Bendahara', '-', 'Tunai / Cash on Hand', 'CASH', 4850000, 'Uang tunai brankas bendahara untuk operasional harian & penerimaan syahriah'),
+    ('bank-bsi', 'BSI (Bank Syariah Indonesia)', '7145829910', 'Bank Syariah Indonesia', 'BANK', 28450000, 'Rekening utama yayasan & penampungan infaq pembangunan'),
+    ('bank-bri-bos', 'BRI Rekening Khusus BOS', '0129-01-002845-53-1', 'Bank Rakyat Indonesia', 'BANK', 14200000, 'Penerimaan dan pertanggungjawaban Dana BOS Kemenag')
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    account_number = EXCLUDED.account_number,
+    bank_name = EXCLUDED.bank_name,
+    type = EXCLUDED.type,
+    balance = EXCLUDED.balance,
+    description = EXCLUDED.description;
+
+-- Data Transaksi Keuangan Bawaan (Buku Kas Umum / BKU)
+INSERT INTO public.financial_transactions (id, ref_no, date, type, category, category_label, amount, account_id, payer_or_payee, description, proof_document_no, recorded_by, created_at)
+VALUES 
+    ('trx-001', 'KM-BOS/2024/07/01', '2024-07-10', 'INCOME', 'DANA_BOS', 'Penyaluran Dana BOS Tahap 1', 32000000, 'bank-bri-bos', 'Kementerian Agama Kab. Temanggung', 'Pencairan Dana BOS Reguler Madrasah Tahap 1 Tahun Anggaran 2024', 'SP2D-KEMENAG/089/2024', 'FATHURRAZAQ, S.Pd.I', '2024-07-10T10:00:00Z'),
+    ('trx-002', 'KM-INF/2024/07/02', '2024-07-12', 'INCOME', 'INFAQ_PEMBANGUNAN', 'Infaq Pembangunan Gedung & Musholla', 5500000, 'bank-bsi', 'Alumni & Komite Madrasah Soborejo', 'Sumbangan dan infaq jariyah renovasi paving halaman dan musholla madrasah', 'KW-INF/2024/007', 'FATHURRAZAQ, S.Pd.I', '2024-07-12T13:30:00Z'),
+    ('trx-003', 'KM-PDB/2024/07/03', '2024-07-14', 'INCOME', 'PPDB_SISWA_BARU', 'Pendaftaran & Seragam Siswa Baru', 4200000, 'kas-tunai', 'Wali Murid Siswa Baru Kelas 1', 'Pembayaran paket seragam identitas Ma''arif, batik, dan pramuka siswa baru', 'PDB-SERAGAM-01', 'FATHURRAZAQ, S.Pd.I', '2024-07-14T11:00:00Z'),
+    ('trx-004', 'KK-GJR/2024/07/01', '2024-07-25', 'EXPENSE', 'BISAROH_GAJI_GURU', 'Bisaroh / Honor Guru & Pegawai', 11500000, 'bank-bri-bos', 'Dewan Guru & Tenaga Kependidikan MI (12 Orang)', 'Bisaroh bulanan ustadz/ustadzah MI Ma''arif Al Ihsan Soborejo bulan Juli', 'SLIP-HONOR-07/2024', 'FATHURRAZAQ, S.Pd.I', '2024-07-25T14:00:00Z'),
+    ('trx-005', 'KK-OPR/2024/08/01', '2024-08-02', 'EXPENSE', 'LISTRIK_AIR_WIFI', 'Tagihan Listrik, Air & Wifi Madrasah', 680000, 'kas-tunai', 'PLN & Indihome Telkom', 'Pembayaran rekening listrik gedung madrasah dan langganan internet bulanan', 'STRUK-PLN-TELKOM-08', 'FATHURRAZAQ, S.Pd.I', '2024-08-02T10:00:00Z'),
+    ('trx-006', 'KK-ATK/2024/08/02', '2024-08-08', 'EXPENSE', 'ATK_DAN_OPERASIONAL_KBM', 'Belanja ATK & Kebutuhan KBM', 1250000, 'kas-tunai', 'Toko Buku & ATK Berkah Pringsurat', 'Pengadaan kertas HVS, spidol whiteboard, tinta stempel, dan buku administrasi kelas', 'NOTA-BRK/892', 'FATHURRAZAQ, S.Pd.I', '2024-08-08T15:10:00Z'),
+    ('trx-007', 'KK-PHB/2024/08/03', '2024-08-16', 'EXPENSE', 'KEGIATAN_PHBI_PORSENI', 'Kegiatan HUT RI & Lomba Pramuka', 1750000, 'kas-tunai', 'Panitia Peringatan Kemerdekaan Madrasah', 'Biaya perlengkapan upacara kemerdekaan, karnaval santri, dan konsumsi peserta', 'LPJ-HUT-79/MI', 'FATHURRAZAQ, S.Pd.I', '2024-08-16T16:00:00Z'),
+    ('trx-008', 'KM-JMT/2024/08/04', '2024-08-23', 'INCOME', 'INFAQ_JUMAT_DONASI', 'Kotak Infaq Jum''at Santri & Guru', 450000, 'kas-tunai', 'Siswa & Dewan Guru', 'Penerimaan infaq keliling Jum''at berkah untuk kegiatan sosial santri', 'KOTAK-JMT-08', 'FATHURRAZAQ, S.Pd.I', '2024-08-23T11:45:00Z')
+ON CONFLICT (id) DO UPDATE SET
+    ref_no = EXCLUDED.ref_no,
+    date = EXCLUDED.date,
+    type = EXCLUDED.type,
+    category = EXCLUDED.category,
+    category_label = EXCLUDED.category_label,
+    amount = EXCLUDED.amount,
+    account_id = EXCLUDED.account_id,
+    payer_or_payee = EXCLUDED.payer_or_payee,
+    description = EXCLUDED.description,
+    proof_document_no = EXCLUDED.proof_document_no,
+    recorded_by = EXCLUDED.recorded_by;
 `;
 
 // Helper: Cek Koneksi & Keberadaan Tabel di Supabase
@@ -336,13 +371,37 @@ export function mapAccountToDb(acc: CashAccount) {
 }
 
 export function mapDbToAccount(row: any): CashAccount {
+  const isLegacyBri = row.id === 'bank-bri';
+  const id = isLegacyBri ? 'bank-bri-bos' : row.id;
+  const name = isLegacyBri
+    ? 'BRI Rekening Khusus BOS'
+    : row.id === 'bank-bsi'
+    ? 'BSI (Bank Syariah Indonesia)'
+    : row.name;
+  const bankName =
+    row.bank_name && row.bank_name !== ''
+      ? row.bank_name
+      : row.id === 'bank-bsi'
+      ? 'Bank Syariah Indonesia'
+      : id === 'bank-bri-bos'
+      ? 'Bank Rakyat Indonesia'
+      : undefined;
+  const accountNumber =
+    row.account_number && row.account_number !== '-'
+      ? row.account_number
+      : row.id === 'bank-bsi'
+      ? '7145829910'
+      : id === 'bank-bri-bos'
+      ? '0129-01-002845-53-1'
+      : undefined;
+
   return {
-    id: row.id,
-    name: row.name,
-    accountNumber: row.account_number || undefined,
-    bankName: row.bank_name || undefined,
-    type: row.type,
-    balance: Number(row.balance),
+    id,
+    name,
+    accountNumber,
+    bankName,
+    type: row.type || (id.startsWith('bank-') ? 'BANK' : 'CASH'),
+    balance: Number(row.balance || 0),
     description: row.description || '',
   };
 }
@@ -356,7 +415,7 @@ export function mapTransactionToDb(t: FinancialTransaction) {
     category: t.category,
     category_label: t.categoryLabel,
     amount: t.amount,
-    account_id: t.accountId,
+    account_id: t.accountId === 'bank-bri' ? 'bank-bri-bos' : t.accountId,
     payer_or_payee: t.payerOrPayee,
     description: t.description || '',
     proof_document_no: t.proofDocumentNo || null,
@@ -374,7 +433,7 @@ export function mapDbToTransaction(row: any): FinancialTransaction {
     category: row.category,
     categoryLabel: row.category_label,
     amount: Number(row.amount),
-    accountId: row.account_id,
+    accountId: row.account_id === 'bank-bri' ? 'bank-bri-bos' : row.account_id,
     payerOrPayee: row.payer_or_payee,
     description: row.description || '',
     proofDocumentNo: row.proof_document_no || undefined,

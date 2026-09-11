@@ -350,7 +350,51 @@ export function mapDbToStudent(row: any): Student {
   };
 }
 
+export function resolvePaymentAccountId(
+  accountId?: string | null,
+  paymentMethod?: string | null
+): string {
+  if (accountId && accountId !== 'bank-bri') {
+    return accountId;
+  }
+  if (accountId === 'bank-bri') {
+    return 'bank-bri-bos';
+  }
+  const method = String(paymentMethod || '').toUpperCase();
+  if (method.includes('BSI')) {
+    return 'bank-bsi';
+  }
+  if (method.includes('BRI')) {
+    return 'bank-bri-bos';
+  }
+  if (method.includes('TRANSFER')) {
+    return 'bank-bsi';
+  }
+  return 'kas-tunai';
+}
+
+export function resolveTransactionAccountId(
+  accountId?: string | null,
+  category?: string | null
+): string {
+  if (accountId && accountId !== 'bank-bri') {
+    return accountId;
+  }
+  if (accountId === 'bank-bri') {
+    return 'bank-bri-bos';
+  }
+  const cat = String(category || '').toUpperCase();
+  if (cat === 'DANA_BOS') {
+    return 'bank-bri-bos';
+  }
+  if (cat.includes('INFAQ_PEMBANGUNAN') || cat.includes('GEDUNG')) {
+    return 'bank-bsi';
+  }
+  return 'kas-tunai';
+}
+
 export function mapSyahriahToDb(rec: SyahriahPaymentRecord) {
+  const accountId = resolvePaymentAccountId(rec.accountId, rec.paymentMethod);
   return {
     id: rec.id,
     receipt_no: rec.receiptNo,
@@ -363,7 +407,7 @@ export function mapSyahriahToDb(rec: SyahriahPaymentRecord) {
     total_amount: rec.totalAmount,
     payment_date: rec.paymentDate,
     payment_method: rec.paymentMethod,
-    account_id: rec.accountId,
+    account_id: accountId,
     received_by: rec.receivedBy,
     notes: rec.notes || null,
     created_at: rec.createdAt || new Date().toISOString(),
@@ -371,6 +415,7 @@ export function mapSyahriahToDb(rec: SyahriahPaymentRecord) {
 }
 
 export function mapDbToSyahriah(row: any): SyahriahPaymentRecord {
+  const accountId = resolvePaymentAccountId(row.account_id, row.payment_method);
   return {
     id: row.id,
     receiptNo: row.receipt_no,
@@ -383,7 +428,7 @@ export function mapDbToSyahriah(row: any): SyahriahPaymentRecord {
     totalAmount: Number(row.total_amount),
     paymentDate: row.payment_date,
     paymentMethod: row.payment_method,
-    accountId: row.account_id,
+    accountId,
     receivedBy: row.received_by,
     notes: row.notes || undefined,
     createdAt: row.created_at,
@@ -440,6 +485,7 @@ export function mapDbToAccount(row: any): CashAccount {
 }
 
 export function mapTransactionToDb(t: FinancialTransaction) {
+  const accountId = resolveTransactionAccountId(t.accountId, t.category);
   return {
     id: t.id,
     ref_no: t.refNo,
@@ -448,7 +494,7 @@ export function mapTransactionToDb(t: FinancialTransaction) {
     category: t.category,
     category_label: t.categoryLabel,
     amount: t.amount,
-    account_id: t.accountId === 'bank-bri' ? 'bank-bri-bos' : t.accountId,
+    account_id: accountId,
     payer_or_payee: t.payerOrPayee,
     description: t.description || '',
     proof_document_no: t.proofDocumentNo || null,
@@ -458,6 +504,7 @@ export function mapTransactionToDb(t: FinancialTransaction) {
 }
 
 export function mapDbToTransaction(row: any): FinancialTransaction {
+  const accountId = resolveTransactionAccountId(row.account_id, row.category);
   return {
     id: row.id,
     refNo: row.ref_no,
@@ -466,7 +513,7 @@ export function mapDbToTransaction(row: any): FinancialTransaction {
     category: row.category,
     categoryLabel: row.category_label,
     amount: Number(row.amount),
-    accountId: row.account_id === 'bank-bri' ? 'bank-bri-bos' : row.account_id,
+    accountId,
     payerOrPayee: row.payer_or_payee,
     description: row.description || '',
     proofDocumentNo: row.proof_document_no || undefined,

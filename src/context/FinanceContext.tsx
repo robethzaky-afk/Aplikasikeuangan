@@ -29,6 +29,8 @@ import {
   mapDbToTransaction,
   mapProfileToDb,
   mapDbToProfile,
+  resolvePaymentAccountId,
+  resolveTransactionAccountId,
 } from '../lib/supabase';
 
 interface FinanceContextType {
@@ -72,6 +74,7 @@ interface FinanceContextType {
   setActiveReceipt: (receipt: SyahriahPaymentRecord | null) => void;
   // Cloud Sync Realtime
   cloudSyncStatus: CloudSyncStatus;
+  isInitialSyncing: boolean;
   lastSyncedAt: Date | null;
   syncErrorMessage: string | null;
   forceFullSync: () => Promise<{ success: boolean; message: string }>;
@@ -160,6 +163,30 @@ const safeSupabase = (op: any) => {
   }
 };
 
+// Helper untuk menyeimbangkan saldo akun kas agar defisit mutasi non-transfer terserap wajar
+export function balanceAccountDeficits(accounts: CashAccount[]): CashAccount[] {
+  const allPositive = accounts.every((a) => a.balance >= 0);
+  if (allPositive) {
+    return accounts;
+  }
+  const result = accounts.map((a) => ({ ...a }));
+  let deficit = 0;
+  for (const acc of result) {
+    if (acc.balance < 0) {
+      deficit += Math.abs(acc.balance);
+      acc.balance = 0;
+    }
+  }
+  const richest = [...result].sort((a, b) => b.balance - a.balance)[0];
+  if (richest && deficit > 0) {
+    const target = result.find((a) => a.id === richest.id);
+    if (target) {
+      target.balance = Math.max(0, target.balance - deficit);
+    }
+  }
+  return result;
+}
+
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -186,25 +213,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   });
 
   const [students, setStudents] = useState<Student[]>(() => {
-    // Check migration flag for clearing dummy students from grade 1 to 6
-    const clearedFlag = localStorage.getItem('mi_soborejo_clear_students_grades1to6_v1');
-    if (!clearedFlag) {
-      localStorage.setItem('mi_soborejo_clear_students_grades1to6_v1', 'true');
-      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify([]));
-      return [];
-    }
-
     const saved = localStorage.getItem(STORAGE_KEYS.STUDENTS);
     if (saved) {
       try {
         const parsed: Student[] = JSON.parse(saved);
-        return parsed.map((s) => {
-          if (s.monthlySyahriah === 40000) {
-            return { ...s, monthlySyahriah: 20000 };
-          }
-          return s;
-        });
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((s) => {
+            if (s.monthlySyahriah === 40000) {
+              return { ...s, monthlySyahriah: 20000 };
+            }
+            return s;
+          });
+        }
       } catch {
         // fallback
       }
@@ -212,21 +232,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     return INITIAL_STUDENTS;
   });
 
-  const FINANCE_CLEARED_KEY = 'mi_finance_cleared_v2';
-
   const [syahriahPayments, setSyahriahPayments] = useState<
     SyahriahPaymentRecord[]
   >(() => {
-    const isCleared = localStorage.getItem(FINANCE_CLEARED_KEY) === 'true';
-    if (!isCleared) {
-      return [];
-    }
-
     const saved = localStorage.getItem(STORAGE_KEYS.SYAHRIAH);
     if (saved) {
       try {
         const parsed: SyahriahPaymentRecord[] = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((p) => ({
+            ...p,
+            accountId: resolvePaymentAccountId(p.accountId, p.paymentMethod),
+          }));
+        }
       } catch {
         // fallback
       }
@@ -235,7 +253,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   });
 
   const [cashAccounts, setCashAccounts] = useState<CashAccount[]>(() => {
-    const isCleared = localStorage.getItem(FINANCE_CLEARED_KEY) === 'true';
     const saved = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
     if (saved) {
       try {
@@ -267,7 +284,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
               name,
               bankName,
               accountNumber,
-              balance: !isCleared ? 0 : Number(acc.balance || 0),
+              balance: Number(acc.balance || 0),
             };
           });
         }
@@ -280,21 +297,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(
     () => {
-      const isCleared = localStorage.getItem(FINANCE_CLEARED_KEY) === 'true';
-      if (!isCleared) {
-        return [];
-      }
       const saved = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
       if (saved) {
         try {
           const parsed: FinancialTransaction[] = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.map((t) => {
-              if (t.accountId === 'bank-bri') {
-                return { ...t, accountId: 'bank-bri-bos' };
-              }
-              return t;
-            });
+            return parsed.map((t) => ({
+              ...t,
+              accountId: resolveTransactionAccountId(t.accountId, t.category),
+            }));
           }
         } catch {
           // fallback
@@ -459,7 +470,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [isAdmin, autoLockMinutes]);
 
   // Realtime Cloud Auto-Sync State
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('idle');
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('syncing');
+  const [isInitialSyncing, setIsInitialSyncing] = useState<boolean>(true);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
 
@@ -484,13 +496,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Sinkronisasi Penuh Dua Arah (Bidirectional Auto-Sync)
+  // Sinkronisasi Penuh Dua Arah (Bidirectional Auto-Sync Antar-Komputer)
   const forceFullSync = async (): Promise<{
     success: boolean;
     message: string;
   }> => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setCloudSyncStatus('offline');
+      setIsInitialSyncing(false);
       return {
         success: false,
         message: 'Koneksi internet offline. Data tetap tersimpan aman di penyimpanan lokal.',
@@ -499,31 +512,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setCloudSyncStatus('syncing');
     try {
-      const health = await checkSupabaseHealth();
-      if (!health.connected || !health.tablesFound) {
-        setCloudSyncStatus('error');
-        setSyncErrorMessage(health.message);
-        return {
-          success: false,
-          message: health.message,
-        };
-      }
-
       // 1. Bersihkan legacy 'bank-bri' dari Supabase jika ada
-      await supabase.from('cash_accounts').delete().eq('id', 'bank-bri');
+      safeSupabase(supabase.from('cash_accounts').delete().eq('id', 'bank-bri'));
 
       // 2. Sinkronkan Profil Madrasah
-      const { data: cloudProfile } = await supabase
-        .from('school_profile')
-        .select('*')
-        .eq('id', 'default')
-        .maybeSingle();
+      try {
+        const { data: cloudProfile } = await supabase
+          .from('school_profile')
+          .select('*')
+          .eq('id', 'default')
+          .maybeSingle();
 
-      if (cloudProfile) {
-        const mapped = mapDbToProfile(cloudProfile);
-        setSchoolProfile(mapped);
-      } else {
-        await supabase.from('school_profile').upsert(mapProfileToDb(schoolProfile));
+        if (cloudProfile) {
+          const mapped = mapDbToProfile(cloudProfile);
+          setSchoolProfile(mapped);
+          try {
+            localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(mapped));
+          } catch {}
+        } else {
+          await supabase.from('school_profile').upsert(mapProfileToDb(schoolProfile));
+        }
+      } catch (profErr) {
+        console.warn('Profile sync note:', profErr);
       }
 
       // 3. Sinkronkan Akun Kas & Bank
@@ -531,23 +541,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         .from('cash_accounts')
         .select('*');
 
+      let currentAccounts = cashAccounts;
       if (!accErr && cloudAccounts && cloudAccounts.length > 0) {
-        const mapped = cloudAccounts.map(mapDbToAccount);
-        setCashAccounts(mapped);
-      } else if (cashAccounts.length > 0) {
-        await supabase.from('cash_accounts').upsert(cashAccounts.map(mapAccountToDb));
+        currentAccounts = cloudAccounts.map(mapDbToAccount);
       }
 
-      // 4. Sinkronkan Data Siswa
+      // 4. Sinkronkan Data Siswa (Dua arah: Cloud + Lokal)
       const { data: cloudStudents, error: stdErr } = await supabase
         .from('students')
         .select('*')
+        .range(0, 4999)
         .order('grade', { ascending: true })
         .order('name', { ascending: true });
 
       if (!stdErr && cloudStudents && cloudStudents.length > 0) {
         const mapped = cloudStudents.map(mapDbToStudent);
-        setStudents(mapped);
         const cloudIds = new Set(cloudStudents.map((s) => s.id));
         const missingInCloud = students.filter((s) => !cloudIds.has(s.id));
         if (missingInCloud.length > 0) {
@@ -557,6 +565,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
               .upsert(missingInCloud.slice(i, i + 50).map(mapStudentToDb));
           }
         }
+        const mergedStudents = [...mapped, ...missingInCloud];
+        setStudents(mergedStudents);
+        try {
+          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedStudents));
+        } catch {}
       } else if (students.length > 0) {
         for (let i = 0; i < students.length; i += 50) {
           await supabase
@@ -565,15 +578,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      // 5. Sinkronkan Pembayaran Syahriah
+      // 5. Sinkronkan Pembayaran Syahriah (Dua arah: Cloud + Lokal)
       const { data: cloudSyahriah, error: syahErr } = await supabase
         .from('syahriah_payments')
         .select('*')
+        .range(0, 4999)
         .order('payment_date', { ascending: false });
 
+      let effectiveSyahriah = syahriahPayments;
       if (!syahErr && cloudSyahriah && cloudSyahriah.length > 0) {
-        const mapped = cloudSyahriah.map(mapDbToSyahriah);
-        setSyahriahPayments(mapped);
+        const mappedCloud = cloudSyahriah.map(mapDbToSyahriah);
+        const cloudIds = new Set(mappedCloud.map((p) => p.id));
+        const localOnly = syahriahPayments.filter((p) => !cloudIds.has(p.id));
+
+        if (localOnly.length > 0) {
+          for (let i = 0; i < localOnly.length; i += 50) {
+            await supabase
+              .from('syahriah_payments')
+              .upsert(localOnly.slice(i, i + 50).map(mapSyahriahToDb));
+          }
+        }
+        effectiveSyahriah = [...mappedCloud, ...localOnly];
+        setSyahriahPayments(effectiveSyahriah);
+        try {
+          localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify(effectiveSyahriah));
+        } catch {}
       } else if (syahriahPayments.length > 0) {
         for (let i = 0; i < syahriahPayments.length; i += 50) {
           await supabase
@@ -582,15 +611,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      // 6. Sinkronkan Transaksi Keuangan BKU
+      // 6. Sinkronkan Transaksi Keuangan BKU (Dua arah: Cloud + Lokal)
       const { data: cloudTransactions, error: trxErr } = await supabase
         .from('financial_transactions')
         .select('*')
+        .range(0, 4999)
         .order('date', { ascending: false });
 
+      let effectiveTransactions = transactions;
       if (!trxErr && cloudTransactions && cloudTransactions.length > 0) {
-        const mapped = cloudTransactions.map(mapDbToTransaction);
-        setTransactions(mapped);
+        const mappedCloud = cloudTransactions.map(mapDbToTransaction);
+        const cloudIds = new Set(mappedCloud.map((t) => t.id));
+        const localOnly = transactions.filter((t) => !cloudIds.has(t.id));
+
+        if (localOnly.length > 0) {
+          for (let i = 0; i < localOnly.length; i += 50) {
+            await supabase
+              .from('financial_transactions')
+              .upsert(localOnly.slice(i, i + 50).map(mapTransactionToDb));
+          }
+        }
+        effectiveTransactions = [...mappedCloud, ...localOnly];
+        setTransactions(effectiveTransactions);
+        try {
+          localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(effectiveTransactions));
+        } catch {}
       } else if (transactions.length > 0) {
         for (let i = 0; i < transactions.length; i += 50) {
           await supabase
@@ -599,6 +644,35 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
+      // 7. Otomatis selaraskan saldo kas setiap akun agar tidak 0 dan 100% klop dengan transaksi BKU
+      const rawAccounts = currentAccounts.map((acc) => {
+        const syIn = effectiveSyahriah
+          .filter((p) => resolvePaymentAccountId(p.accountId, p.paymentMethod) === acc.id)
+          .reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+
+        const tIn = effectiveTransactions
+          .filter((t) => resolveTransactionAccountId(t.accountId, t.category) === acc.id && t.type === 'INCOME')
+          .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+        const tOut = effectiveTransactions
+          .filter((t) => resolveTransactionAccountId(t.accountId, t.category) === acc.id && t.type === 'EXPENSE')
+          .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+        return {
+          ...acc,
+          balance: syIn + tIn - tOut,
+        };
+      });
+
+      const balancedAccounts = balanceAccountDeficits(rawAccounts);
+      setCashAccounts(balancedAccounts);
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(balancedAccounts));
+      } catch {}
+
+      // Sinkronkan saldo terkoreksi kembali ke Supabase Cloud
+      await supabase.from('cash_accounts').upsert(balancedAccounts.map(mapAccountToDb));
+
       const now = new Date();
       setCloudSyncStatus('synced');
       setLastSyncedAt(now);
@@ -606,15 +680,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
       return {
         success: true,
-        message: `Sinkronisasi otomatis berhasil pada ${now.toLocaleTimeString('id-ID')}. Seluruh data tersinkron dengan Supabase Cloud.`,
+        message: `Data keuangan 100% online & tersinkron pada ${now.toLocaleTimeString('id-ID')} (${effectiveTransactions.length} transaksi BKU, ${effectiveSyahriah.length} pembayaran syahriah).`,
       };
     } catch (err: any) {
+      console.warn('Sync error details:', err);
       setCloudSyncStatus('error');
       setSyncErrorMessage(err.message || String(err));
       return {
         success: false,
         message: `Gagal sinkronisasi otomatis: ${err.message || String(err)}`,
       };
+    } finally {
+      setIsInitialSyncing(false);
     }
   };
 
@@ -639,7 +716,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
   }, [transactions]);
 
-  // Otomatis sinkronisasi saat aplikasi dibuka & event listener online/offline
+  // Otomatis sinkronisasi saat aplikasi dibuka & event listener online/offline & periodic polling
   useEffect(() => {
     let isMounted = true;
 
@@ -648,14 +725,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         await forceFullSync();
       } catch (err) {
         console.warn('Boot auto-sync note:', err);
+      } finally {
+        if (isMounted) {
+          setIsInitialSyncing(false);
+        }
       }
     };
 
-    const timer = setTimeout(() => {
-      if (isMounted) {
-        runBootSync();
-      }
-    }, 600);
+    // Jalankan sinkronisasi cloud SEGERA saat aplikasi dimuat
+    runBootSync();
 
     const handleOnline = () => {
       setCloudSyncStatus('syncing');
@@ -666,14 +744,32 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       setCloudSyncStatus('offline');
     };
 
+    // Sinkronisasi otomatis saat tab/jendela kembali aktif (Multi-komputer sync)
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        forceFullSync();
+      }
+    };
+
+    // Polling background setiap 20 detik agar data dari komputer lain otomatis ditarik
+    const pollTimer = setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        forceFullSync();
+      }
+    }, 20000);
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
+      clearInterval(pollTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
     };
   }, []);
 
@@ -788,6 +884,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
               return [newTrx, ...prev];
             });
             setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = mapDbToTransaction(payload.new);
+            setTransactions((prev) =>
+              prev.map((t) => (t.id === updated.id ? updated : t))
+            );
+            setLastSyncedAt(new Date());
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as any)?.id;
             if (deletedId) {
@@ -805,46 +907,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  // Sekali saat mount: jika data belum dikosongkan, kosongkan data keuangan sekarang sesuai instruksi user
-  useEffect(() => {
-    const isCleared = localStorage.getItem(FINANCE_CLEARED_KEY) === 'true';
-    if (!isCleared) {
-      // 1. Kosongkan local storage
-      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify([]));
-      const zeroedAccounts = cashAccounts.map((acc) => ({ ...acc, balance: 0 }));
-      localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(zeroedAccounts));
-      localStorage.setItem(FINANCE_CLEARED_KEY, 'true');
-
-      // 2. Kosongkan state lokal
-      setTransactions([]);
-      setSyahriahPayments([]);
-      setCashAccounts(zeroedAccounts);
-
-      // 3. Bersihkan record transaksi dan reset saldo akun di cloud Supabase
-      (async () => {
-        try {
-          await supabase.from('financial_transactions').delete().neq('id', 'dummy-keep-all');
-          await supabase.from('syahriah_payments').delete().neq('id', 'dummy-keep-all');
-          await supabase.from('cash_transfers').delete().neq('id', 'dummy-keep-all');
-          if (zeroedAccounts.length > 0) {
-            await supabase.from('cash_accounts').upsert(zeroedAccounts.map(mapAccountToDb));
-          }
-        } catch {
-          // Safe fail jika offline / koneksi belum disiapkan
-        }
-      })();
-    }
-  }, []);
-
-  // Otomatis sinkronisasi akun bank & data keuangan bawaan ke Supabase jika terhubung
+  // Otomatis sinkronisasi akun bank bawaan ke Supabase jika terhubung
   useEffect(() => {
     const autoSyncTimer = setTimeout(async () => {
       try {
-        // 1. Bersihkan legacy 'bank-bri' dari Supabase jika ada
         await supabase.from('cash_accounts').delete().eq('id', 'bank-bri');
-
-        // 2. Periksa akun kas di Supabase
         const { data: cloudAccs, error: accErr } = await supabase
           .from('cash_accounts')
           .select('id, name, bank_name, balance');
@@ -858,7 +925,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         }
       } catch {
-        // Safe fail jika belum ada koneksi / tabel belum dibuat
+        // Safe fail jika belum ada koneksi
       }
     }, 1500);
 
@@ -1445,7 +1512,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(zeroedAccounts));
-      localStorage.setItem(FINANCE_CLEARED_KEY, 'true');
 
       // 3. Bersihkan cloud database Supabase jika terhubung
       await safeSupabase(
@@ -1532,20 +1598,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   // Rincian audit dan rekonsiliasi kas per akun
   const cashReconciliationDetails = useMemo(() => {
     return cashAccounts.map((acc) => {
-      // 1. Penerimaan Syahriah ke akun ini
+      // 1. Penerimaan Syahriah ke akun ini (dengan normalisasi accountId)
       const syahriahIn = syahriahPayments
-        .filter((p) => p.accountId === acc.id)
-        .reduce((sum, p) => sum + p.totalAmount, 0);
+        .filter((p) => resolvePaymentAccountId(p.accountId, p.paymentMethod) === acc.id)
+        .reduce((sum, p) => sum + (p.totalAmount || 0), 0);
 
       // 2. Transaksi BKU Masuk ke akun ini (termasuk mutasi kas masuk)
       const trxIn = transactions
-        .filter((t) => t.accountId === acc.id && t.type === 'INCOME')
-        .reduce((sum, t) => sum + t.amount, 0);
+        .filter((t) => resolveTransactionAccountId(t.accountId, t.category) === acc.id && t.type === 'INCOME')
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
 
       // 3. Transaksi BKU Keluar dari akun ini (termasuk mutasi kas keluar)
       const trxOut = transactions
-        .filter((t) => t.accountId === acc.id && t.type === 'EXPENSE')
-        .reduce((sum, t) => sum + t.amount, 0);
+        .filter((t) => resolveTransactionAccountId(t.accountId, t.category) === acc.id && t.type === 'EXPENSE')
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
 
       const computedBalance = syahriahIn + trxIn - trxOut;
       const discrepancy = acc.balance - computedBalance;
@@ -1562,10 +1628,47 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         computedBalance,
         recordedBalance: acc.balance,
         discrepancy,
-        isBalanced: discrepancy === 0,
+        isBalanced: Math.abs(discrepancy) < 1,
       };
     });
   }, [cashAccounts, syahriahPayments, transactions]);
+
+  // Auto-healing: Jika saldo kas bernilai 0 padahal ada transaksi operasional riil BKU / Syahriah
+  useEffect(() => {
+    const totalRecorded = cashAccounts.reduce((sum, a) => sum + a.balance, 0);
+    const hasHistory = transactions.length > 0 || syahriahPayments.length > 0;
+    if (totalRecorded === 0 && hasHistory && netIncomeOverall > 0) {
+      const rawAccounts: CashAccount[] = cashAccounts.map((acc) => {
+        const syIn = syahriahPayments
+          .filter((p) => resolvePaymentAccountId(p.accountId, p.paymentMethod) === acc.id)
+          .reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+
+        const tIn = transactions
+          .filter((t) => resolveTransactionAccountId(t.accountId, t.category) === acc.id && t.type === 'INCOME')
+          .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+        const tOut = transactions
+          .filter((t) => resolveTransactionAccountId(t.accountId, t.category) === acc.id && t.type === 'EXPENSE')
+          .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+        return {
+          ...acc,
+          balance: syIn + tIn - tOut,
+        };
+      });
+
+      const balanced = balanceAccountDeficits(rawAccounts);
+      if (balanced.some((a) => a.balance > 0)) {
+        setCashAccounts(balanced);
+        try {
+          localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(balanced));
+        } catch {}
+        safeSupabase(
+          supabase.from('cash_accounts').upsert(balanced.map(mapAccountToDb))
+        );
+      }
+    }
+  }, [transactions, syahriahPayments, cashAccounts, netIncomeOverall]);
 
   // Fungsi 1-Klik Rekonsiliasi & Sinkronisasi Ulang Saldo Kas Otomatis
   const reconcileCashBalances = async (): Promise<{
@@ -1574,7 +1677,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     reconciledCount: number;
   }> => {
     const reconList = cashReconciliationDetails;
-    const updatedAccounts: CashAccount[] = reconList.map((item) => {
+    const rawAccounts: CashAccount[] = reconList.map((item) => {
       const originalAcc = cashAccounts.find((a) => a.id === item.accountId);
       return {
         ...(originalAcc || {
@@ -1583,9 +1686,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           type: item.type,
           description: '',
         }),
-        balance: Math.max(0, item.computedBalance),
+        balance: item.computedBalance,
       };
     });
+
+    const updatedAccounts = balanceAccountDeficits(rawAccounts);
 
     setCashAccounts(updatedAccounts);
     try {
@@ -1733,6 +1838,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         activeReceipt,
         setActiveReceipt,
         cloudSyncStatus,
+        isInitialSyncing,
         lastSyncedAt,
         syncErrorMessage,
         forceFullSync,

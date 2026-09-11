@@ -102,20 +102,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center gap-2.5">
             {/* Supabase Auto Sync Live Badge */}
             <button
+              id="btn-sync-cloud-live"
               type="button"
-              onClick={() => {
-                if (cloudSyncStatus === 'error') {
-                  forceFullSync();
-                } else {
-                  onTabChange('settings');
-                }
-              }}
+              onClick={() => forceFullSync()}
               title={
                 lastSyncedAt
-                  ? `Singkron Otomatis Aktif (Terakhir: ${new Date(lastSyncedAt).toLocaleTimeString('id-ID')}). Klik untuk buka status Cloud.`
-                  : 'Singkron Otomatis Supabase Cloud Aktif. Klik untuk membuka pengaturan.'
+                  ? `Cloud Sync Aktif (Terakhir: ${new Date(lastSyncedAt).toLocaleTimeString('id-ID')}). Klik untuk tarik data terbaru dari cloud sekarang.`
+                  : 'Cloud Sync Supabase Aktif. Klik untuk sinkronisasi data antar-komputer sekarang.'
               }
-              className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer border ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer border ${
                 cloudSyncStatus === 'syncing'
                   ? 'bg-amber-950/70 border-amber-500/60 text-amber-200'
                   : cloudSyncStatus === 'synced'
@@ -136,15 +131,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <Database className="w-3.5 h-3.5 text-emerald-300" />
               )}
-              <span>
+              <span className="hidden sm:inline">
                 {cloudSyncStatus === 'syncing'
                   ? 'Menyinkronkan...'
                   : cloudSyncStatus === 'synced'
-                  ? 'Singkron Otomatis'
+                  ? 'Singkron Cloud'
                   : cloudSyncStatus === 'error'
-                  ? 'Singkron Tertunda'
+                  ? 'Singkron Ulang'
                   : cloudSyncStatus === 'offline'
-                  ? 'Offline (Lokal)'
+                  ? 'Offline'
                   : 'Supabase Cloud'}
               </span>
               <span

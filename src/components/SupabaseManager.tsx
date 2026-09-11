@@ -46,6 +46,7 @@ export const SupabaseManager: React.FC = () => {
     cashAccounts,
     transactions,
     syncFinancialsWithCloud,
+    forceFullSync,
   } = useFinance();
 
   const [status, setStatus] = useState<{
@@ -194,91 +195,22 @@ export const SupabaseManager: React.FC = () => {
       return;
     }
 
-    if (
-      !window.confirm(
-        'Apakah Anda ingin mengunduh data dari Supabase dan memperbarui data lokal saat ini?'
-      )
-    ) {
-      return;
-    }
-
     setSyncLoading('download');
     setSyncNotification(null);
 
     try {
-      // 1. Download Profile
-      const { data: profileRows } = await supabase
-        .from('school_profile')
-        .select('*')
-        .eq('id', 'default')
-        .maybeSingle();
-
-      if (profileRows) {
-        updateSchoolProfile(mapDbToProfile(profileRows));
+      const res = await forceFullSync();
+      if (res.success) {
+        setSyncNotification({
+          type: 'success',
+          message: res.message,
+        });
+      } else {
+        setSyncNotification({
+          type: 'error',
+          message: res.message,
+        });
       }
-
-      // 2. Download Students
-      const { data: stdRows, error: stdError } = await supabase
-        .from('students')
-        .select('*')
-        .order('grade', { ascending: true })
-        .order('name', { ascending: true });
-      if (stdError) throw stdError;
-
-      // 3. Download Syahriah
-      const { data: syahRows, error: syahError } = await supabase
-        .from('syahriah_payments')
-        .select('*')
-        .order('payment_date', { ascending: false });
-      if (syahError) throw syahError;
-
-      // 4. Download Accounts
-      const { data: accRows, error: accError } = await supabase
-        .from('cash_accounts')
-        .select('*');
-      if (accError) throw accError;
-
-      // 5. Download Transactions
-      const { data: trxRows, error: trxError } = await supabase
-        .from('financial_transactions')
-        .select('*')
-        .order('date', { ascending: false });
-      if (trxError) throw trxError;
-
-      // Save directly to localStorage and reload context
-      if (stdRows) {
-        localStorage.setItem(
-          'mi_keuangan_students_v1',
-          JSON.stringify(stdRows.map(mapDbToStudent))
-        );
-      }
-      if (syahRows) {
-        localStorage.setItem(
-          'mi_keuangan_syahriah_v1',
-          JSON.stringify(syahRows.map(mapDbToSyahriah))
-        );
-      }
-      if (accRows && accRows.length > 0) {
-        localStorage.setItem(
-          'mi_keuangan_accounts_v1',
-          JSON.stringify(accRows.map(mapDbToAccount))
-        );
-      }
-      if (trxRows) {
-        localStorage.setItem(
-          'mi_keuangan_transactions_v1',
-          JSON.stringify(trxRows.map(mapDbToTransaction))
-        );
-      }
-
-      setSyncNotification({
-        type: 'success',
-        message: 'Data Supabase berhasil diunduh! Halaman akan diperbarui...',
-      });
-
-      setTimeout(() => {
-        window.location.reload();
-      }, 1200);
     } catch (err: any) {
       setSyncNotification({
         type: 'error',

@@ -20,6 +20,10 @@ import {
   formatDateIndo,
   getTodayDateString,
 } from '../utils/formatters';
+import {
+  resolvePaymentAccountId,
+  resolveTransactionAccountId,
+} from '../lib/supabase';
 
 export const GeneralLedger: React.FC = () => {
   const {
@@ -87,7 +91,7 @@ export const GeneralLedger: React.FC = () => {
       categoryLabel: 'Penerimaan Syahriah / SPP',
       description: `Syahriah ${p.studentName} (${p.classGroup}) bulan ${p.months.join(', ')}`,
       payerOrPayee: p.studentName,
-      accountId: p.accountId,
+      accountId: resolvePaymentAccountId(p.accountId, p.paymentMethod),
       debit: p.totalAmount, // Masuk (Debit)
       kredit: 0, // Keluar (Kredit)
       rawPayment: p,
@@ -104,7 +108,7 @@ export const GeneralLedger: React.FC = () => {
       categoryLabel: t.categoryLabel,
       description: t.description,
       payerOrPayee: t.payerOrPayee,
-      accountId: t.accountId,
+      accountId: resolveTransactionAccountId(t.accountId, t.category),
       debit: t.type === 'INCOME' ? t.amount : 0,
       kredit: t.type === 'EXPENSE' ? t.amount : 0,
       rawPayment: null,

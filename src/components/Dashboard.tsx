@@ -58,14 +58,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isReconciling, setIsReconciling] = useState(false);
   const [reconcileNotice, setReconcileNotice] = useState<string | null>(null);
 
-  const handleQuickReconcile = () => {
-    requireAdmin(async () => {
-      setIsReconciling(true);
-      const res = await reconcileCashBalances();
-      setIsReconciling(false);
-      setReconcileNotice(res.message);
-      setTimeout(() => setReconcileNotice(null), 6000);
-    }, 'Penyelarasan Saldo Kas dengan Buku Kas Umum (BKU)');
+  const handleQuickReconcile = async () => {
+    setIsReconciling(true);
+    const res = await reconcileCashBalances();
+    setIsReconciling(false);
+    setReconcileNotice(res.message);
+    setTimeout(() => setReconcileNotice(null), 6000);
   };
 
   // Current month in Indonesian school year

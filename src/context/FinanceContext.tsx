@@ -47,7 +47,10 @@ interface FinanceContextType {
   recordSyahriahPayment: (
     payment: Omit<SyahriahPaymentRecord, 'id' | 'receiptNo' | 'createdAt'>
   ) => SyahriahPaymentRecord;
+  updateSyahriahPayment: (payment: SyahriahPaymentRecord) => void;
   deleteSyahriahPayment: (id: string) => void;
+  editingSyahriahPayment: SyahriahPaymentRecord | null;
+  setEditingSyahriahPayment: (payment: SyahriahPaymentRecord | null) => void;
   cashAccounts: CashAccount[];
   updateCashAccount: (account: CashAccount) => void;
   addCashAccount: (account: Omit<CashAccount, 'id'>) => CashAccount;
@@ -80,6 +83,27 @@ interface FinanceContextType {
   totalExpenseOverall: number;
   totalSyahriahIncome: number;
   totalOtherIncome: number;
+  netIncomeOverall: number;
+  cashDiscrepancy: number;
+  cashReconciliationDetails: {
+    accountId: string;
+    accountName: string;
+    bankName?: string;
+    accountNumber?: string;
+    type: 'CASH' | 'BANK';
+    syahriahIn: number;
+    trxIn: number;
+    trxOut: number;
+    computedBalance: number;
+    recordedBalance: number;
+    discrepancy: number;
+    isBalanced: boolean;
+  }[];
+  reconcileCashBalances: () => Promise<{
+    success: boolean;
+    message: string;
+    reconciledCount: number;
+  }>;
   // Backup & Restore
   exportDataJson: () => string;
   importDataJson: (jsonString: string) => boolean;
@@ -281,6 +305,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const [activeReceipt, setActiveReceipt] =
+    useState<SyahriahPaymentRecord | null>(null);
+  const [editingSyahriahPayment, setEditingSyahriahPayment] =
     useState<SyahriahPaymentRecord | null>(null);
 
   // Admin & Security Mode State
@@ -734,6 +760,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
               return [newPayment, ...prev];
             });
             setLastSyncedAt(new Date());
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = mapDbToSyahriah(payload.new);
+            setSyahriahPayments((prev) =>
+              prev.map((p) => (p.id === updated.id ? updated : p))
+            );
+            setActiveReceipt((curr) => (curr?.id === updated.id ? updated : curr));
+            setLastSyncedAt(new Date());
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as any)?.id;
             if (deletedId) {
@@ -1026,6 +1059,105 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     return newPayment;
   };
 
+  const updateSyahriahPayment = (updatedPayment: SyahriahPaymentRecord) => {
+    // 1. Cari data lama dan perbarui daftar pembayaran syahriah
+    let oldPayment: SyahriahPaymentRecord | undefined;
+
+    setSyahriahPayments((prev) => {
+      oldPayment = prev.find(
+        (p) => String(p.id).trim() === String(updatedPayment.id).trim()
+      );
+
+      const exists = !!oldPayment;
+      const nextList = exists
+        ? prev.map((p) =>
+            String(p.id).trim() === String(updatedPayment.id).trim()
+              ? updatedPayment
+              : p
+          )
+        : [updatedPayment, ...prev];
+
+      try {
+        localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify(nextList));
+      } catch {}
+
+      return nextList;
+    });
+
+    // Fallback jika oldPayment tidak ditemukan di state lama
+    const effectiveOldPayment = oldPayment || updatedPayment;
+
+    // 2. Sesuaikan saldo akun kas / bank penerima
+    let accountsToSync: CashAccount[] = [];
+    setCashAccounts((prev) => {
+      let nextAccounts = [...prev];
+
+      if (effectiveOldPayment.accountId === updatedPayment.accountId) {
+        // Akun sama: cukup sesuaikan selisih nominal
+        const diff = updatedPayment.totalAmount - effectiveOldPayment.totalAmount;
+        if (diff !== 0) {
+          nextAccounts = nextAccounts.map((acc) =>
+            acc.id === updatedPayment.accountId
+              ? { ...acc, balance: Math.max(0, acc.balance + diff) }
+              : acc
+          );
+        }
+      } else {
+        // Akun berbeda: kurangi akun lama, tambahkan ke akun baru
+        nextAccounts = nextAccounts.map((acc) => {
+          if (acc.id === effectiveOldPayment.accountId) {
+            return {
+              ...acc,
+              balance: Math.max(0, acc.balance - effectiveOldPayment.totalAmount),
+            };
+          }
+          if (acc.id === updatedPayment.accountId) {
+            return {
+              ...acc,
+              balance: acc.balance + updatedPayment.totalAmount,
+            };
+          }
+          return acc;
+        });
+      }
+
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(nextAccounts));
+      } catch {}
+
+      accountsToSync = nextAccounts.filter(
+        (a) =>
+          a.id === effectiveOldPayment.accountId ||
+          a.id === updatedPayment.accountId
+      );
+      return nextAccounts;
+    });
+
+    // 3. Perbarui activeReceipt jika sedang terbuka
+    setActiveReceipt((curr) =>
+      curr?.id === updatedPayment.id ? updatedPayment : curr
+    );
+
+    // 4. Sinkronkan pembaruan data dan perubahan saldo kas ke Supabase Cloud
+    syncWithCloud(async () => {
+      const { error: payErr } = await supabase
+        .from('syahriah_payments')
+        .upsert(mapSyahriahToDb(updatedPayment));
+      if (payErr) {
+        console.warn('Gagal sinkron syahriah_payments:', payErr);
+      }
+
+      if (accountsToSync.length > 0) {
+        const { error: accErr } = await supabase
+          .from('cash_accounts')
+          .upsert(accountsToSync.map(mapAccountToDb));
+        if (accErr) {
+          console.warn('Gagal sinkron cash_accounts:', accErr);
+        }
+      }
+    });
+  };
+
   const deleteSyahriahPayment = (id: string) => {
     const payment = syahriahPayments.find((p) => p.id === id);
     if (!payment) return;
@@ -1151,20 +1283,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   ) => {
     if (fromId === toId || amount <= 0) return;
 
-    let updatedAccounts: CashAccount[] = [];
-    setCashAccounts((prev) => {
-      updatedAccounts = prev.map((acc) => {
-        if (acc.id === fromId) {
-          return { ...acc, balance: acc.balance - amount };
-        }
-        if (acc.id === toId) {
-          return { ...acc, balance: acc.balance + amount };
-        }
-        return acc;
-      });
-      return updatedAccounts;
-    });
-
     const fromAcc = cashAccounts.find((a) => a.id === fromId)?.name || fromId;
     const toAcc = cashAccounts.find((a) => a.id === toId)?.name || toId;
 
@@ -1183,15 +1301,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       created_at: new Date().toISOString(),
     };
 
+    // Sinkronkan catatan mutasi transfer ke cloud
     syncWithCloud(async () => {
       await supabase.from('cash_transfers').insert(trfData);
-      if (updatedAccounts.length > 0) {
-        await supabase
-          .from('cash_accounts')
-          .upsert(updatedAccounts.map(mapAccountToDb));
-      }
     });
 
+    // Catat mutasi kas keluar dari akun asal (addTransaction otomatis memotong saldo akun asal & sync cloud)
     addTransaction({
       date: today,
       type: 'EXPENSE',
@@ -1204,6 +1319,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       recordedBy: schoolProfile.treasurerName,
     });
 
+    // Catat mutasi kas masuk ke akun tujuan (addTransaction otomatis menambah saldo akun tujuan & sync cloud)
     addTransaction({
       date: today,
       type: 'INCOME',
@@ -1403,6 +1519,103 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       .reduce((sum, t) => sum + t.amount, 0);
   }, [transactions]);
 
+  // Arus kas bersih berdasarkan seluruh transaksi operasional riil (Penerimaan - Pengeluaran)
+  const netIncomeOverall = useMemo(() => {
+    return totalIncomeOverall - totalExpenseOverall;
+  }, [totalIncomeOverall, totalExpenseOverall]);
+
+  // Selisih antara akumulasi saldo akun kas saat ini dengan arus kas bersih BKU
+  const cashDiscrepancy = useMemo(() => {
+    return totalCashBalance - netIncomeOverall;
+  }, [totalCashBalance, netIncomeOverall]);
+
+  // Rincian audit dan rekonsiliasi kas per akun
+  const cashReconciliationDetails = useMemo(() => {
+    return cashAccounts.map((acc) => {
+      // 1. Penerimaan Syahriah ke akun ini
+      const syahriahIn = syahriahPayments
+        .filter((p) => p.accountId === acc.id)
+        .reduce((sum, p) => sum + p.totalAmount, 0);
+
+      // 2. Transaksi BKU Masuk ke akun ini (termasuk mutasi kas masuk)
+      const trxIn = transactions
+        .filter((t) => t.accountId === acc.id && t.type === 'INCOME')
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      // 3. Transaksi BKU Keluar dari akun ini (termasuk mutasi kas keluar)
+      const trxOut = transactions
+        .filter((t) => t.accountId === acc.id && t.type === 'EXPENSE')
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      const computedBalance = syahriahIn + trxIn - trxOut;
+      const discrepancy = acc.balance - computedBalance;
+
+      return {
+        accountId: acc.id,
+        accountName: acc.name,
+        bankName: acc.bankName,
+        accountNumber: acc.accountNumber,
+        type: acc.type,
+        syahriahIn,
+        trxIn,
+        trxOut,
+        computedBalance,
+        recordedBalance: acc.balance,
+        discrepancy,
+        isBalanced: discrepancy === 0,
+      };
+    });
+  }, [cashAccounts, syahriahPayments, transactions]);
+
+  // Fungsi 1-Klik Rekonsiliasi & Sinkronisasi Ulang Saldo Kas Otomatis
+  const reconcileCashBalances = async (): Promise<{
+    success: boolean;
+    message: string;
+    reconciledCount: number;
+  }> => {
+    const reconList = cashReconciliationDetails;
+    const updatedAccounts: CashAccount[] = reconList.map((item) => {
+      const originalAcc = cashAccounts.find((a) => a.id === item.accountId);
+      return {
+        ...(originalAcc || {
+          id: item.accountId,
+          name: item.accountName,
+          type: item.type,
+          description: '',
+        }),
+        balance: Math.max(0, item.computedBalance),
+      };
+    });
+
+    setCashAccounts(updatedAccounts);
+    try {
+      localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
+    } catch {}
+
+    let syncMsg = '';
+    try {
+      const { error } = await supabase
+        .from('cash_accounts')
+        .upsert(updatedAccounts.map(mapAccountToDb));
+      if (!error) {
+        syncMsg = ' dan berhasil tersinkronisasi ke Cloud Supabase.';
+      }
+    } catch {
+      syncMsg = ' (tersimpan di lokal browser).';
+    }
+
+    const changedCount = reconList.filter((r) => !r.isBalanced).length;
+    return {
+      success: true,
+      message: `Rekonsiliasi berhasil! ${
+        changedCount > 0
+          ? `${changedCount} akun kas telah diselaraskan dengan mutasi transaksi BKU & Syahriah`
+          : 'Seluruh akun kas sudah 100% klop dengan mutasi BKU'
+      }${syncMsg}`,
+      reconciledCount: changedCount,
+    };
+  };
+
   // Backup & restore
   const exportDataJson = (): string => {
     const fullBackup = {
@@ -1503,7 +1716,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         bulkImportStudents,
         syahriahPayments,
         recordSyahriahPayment,
+        updateSyahriahPayment,
         deleteSyahriahPayment,
+        editingSyahriahPayment,
+        setEditingSyahriahPayment,
         cashAccounts,
         updateCashAccount,
         addCashAccount,
@@ -1527,6 +1743,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         totalExpenseOverall,
         totalSyahriahIncome,
         totalOtherIncome,
+        netIncomeOverall,
+        cashDiscrepancy,
+        cashReconciliationDetails,
+        reconcileCashBalances,
         exportDataJson,
         importDataJson,
         resetToDefault,

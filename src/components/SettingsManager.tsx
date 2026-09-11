@@ -26,6 +26,10 @@ import {
   Eye,
   EyeOff,
   Clock,
+  Scale,
+  Calculator,
+  Info,
+  AlertCircle,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { SchoolProfile, CashAccount } from '../types';
@@ -59,6 +63,9 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     isDefaultPassword,
     autoLockMinutes,
     setAutoLockMinutes,
+    cashDiscrepancy,
+    cashReconciliationDetails,
+    reconcileCashBalances,
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState<'supabase' | 'accounts' | 'profile' | 'security'>(initialTab);
@@ -90,6 +97,17 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
 
   // Clear financial data state
   const [isClearingFinancialData, setIsClearingFinancialData] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+
+  const handleReconcileCash = () => {
+    requireAdmin(async () => {
+      setIsReconciling(true);
+      const res = await reconcileCashBalances();
+      setIsReconciling(false);
+      setAccountSaveNotice(res.message);
+      setTimeout(() => setAccountSaveNotice(null), 6000);
+    }, 'Rekonsiliasi & Penyelarasan Saldo Kas dengan Buku Kas Umum (BKU)');
+  };
 
   // Admin Security Password State
   const [pwdForm, setPwdForm] = useState({
@@ -451,6 +469,131 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
               <RotateCcw className={`w-3.5 h-3.5 ${isClearingFinancialData ? 'animate-spin' : ''}`} />
               <span>{isClearingFinancialData ? 'Mengosongkan...' : 'Kosongkan Data Keuangan'}</span>
             </button>
+          </div>
+
+          {/* Audit & Rekonsiliasi Saldo Kas vs Buku Kas Umum */}
+          <div
+            className={`p-5 rounded-xl border transition-all ${
+              cashDiscrepancy === 0
+                ? 'bg-emerald-50/70 border-emerald-200'
+                : 'bg-amber-50/90 border-amber-300 shadow-xs'
+            }`}
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                    cashDiscrepancy === 0
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-200 text-amber-900'
+                  }`}
+                >
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-bold text-gray-900">
+                      Audit &amp; Rekonsiliasi Saldo Kas vs Buku Kas Umum (BKU)
+                    </h4>
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                        cashDiscrepancy === 0
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-200 text-amber-900 border border-amber-400 animate-pulse'
+                      }`}
+                    >
+                      {cashDiscrepancy === 0
+                        ? '100% Klop (Sesuai BKU)'
+                        : `Selisih: ${formatRupiah(Math.abs(cashDiscrepancy))}`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1 max-w-3xl leading-relaxed">
+                    {cashDiscrepancy === 0
+                      ? 'Seluruh saldo yang tersimpan di akun kas madrasah telah terverifikasi dan sesuai dengan akumulasi mutasi transaksi Buku Kas Umum (BKU) dan pembayaran Syahriah santri.'
+                      : 'Terdeteksi selisih antara saldo yang tersimpan di kartu akun dengan catatan transaksi riil BKU. Ini bisa terjadi karena pemindahan kas/tarik tunai lama, saldo awal, atau koreksi nominal. Anda dapat menekan tombol di samping untuk langsung menyelaraskan kembali saldo akun secara otomatis.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleReconcileCash}
+                  disabled={isReconciling}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow-xs ${
+                    cashDiscrepancy === 0
+                      ? 'bg-white border border-gray-300 hover:bg-gray-50 text-gray-700'
+                      : 'bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white ring-2 ring-emerald-600 ring-offset-1'
+                  }`}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isReconciling ? 'animate-spin' : ''}`} />
+                  <span>
+                    {isReconciling
+                      ? 'Menyelaraskan...'
+                      : cashDiscrepancy === 0
+                      ? 'Verifikasi Ulang Saldo'
+                      : 'Hitung Ulang & Selaraskan Saldo (1-Klik)'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Rincian Audit Per Rekening */}
+            <div className="mt-4 pt-4 border-t border-gray-200/80 overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="text-gray-500 font-semibold border-b border-gray-200/80">
+                    <th className="pb-2">Nama Akun / Rekening</th>
+                    <th className="pb-2 text-right">Syahriah Masuk</th>
+                    <th className="pb-2 text-right">BKU Masuk</th>
+                    <th className="pb-2 text-right">BKU Keluar</th>
+                    <th className="pb-2 text-right">Saldo Riil BKU</th>
+                    <th className="pb-2 text-right">Saldo di Akun</th>
+                    <th className="pb-2 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {cashReconciliationDetails.map((item) => (
+                    <tr key={item.accountId} className="hover:bg-white/50">
+                      <td className="py-2.5 font-medium text-gray-900">
+                        <div>{item.accountName}</div>
+                        {item.accountNumber && (
+                          <div className="text-[10px] text-gray-400 font-mono">
+                            {item.bankName} - {item.accountNumber}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 text-right font-mono text-emerald-700">
+                        {formatRupiah(item.syahriahIn)}
+                      </td>
+                      <td className="py-2.5 text-right font-mono text-teal-700">
+                        {formatRupiah(item.trxIn)}
+                      </td>
+                      <td className="py-2.5 text-right font-mono text-rose-700">
+                        {formatRupiah(item.trxOut)}
+                      </td>
+                      <td className="py-2.5 text-right font-mono font-bold text-gray-900">
+                        {formatRupiah(Math.max(0, item.computedBalance))}
+                      </td>
+                      <td className="py-2.5 text-right font-mono text-gray-700">
+                        {formatRupiah(item.recordedBalance)}
+                      </td>
+                      <td className="py-2.5 text-center">
+                        {item.isBalanced ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3" /> Klop
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                            Selisih {formatRupiah(Math.abs(item.discrepancy))}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Cards Grid of Accounts */}

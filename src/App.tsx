@@ -14,11 +14,18 @@ import { StudentManager } from './components/StudentManager';
 import { FinancialReports } from './components/FinancialReports';
 import { SettingsManager } from './components/SettingsManager';
 import { ReceiptModal } from './components/ReceiptModal';
+import { EditSyahriahModal } from './components/EditSyahriahModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { School, Heart, ShieldCheck } from 'lucide-react';
 
 function MainContent() {
-  const { activeReceipt, setActiveReceipt, schoolProfile } = useFinance();
+  const {
+    activeReceipt,
+    setActiveReceipt,
+    editingSyahriahPayment,
+    setEditingSyahriahPayment,
+    schoolProfile,
+  } = useFinance();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [settingsSubTab, setSettingsSubTab] = useState<'supabase' | 'accounts' | 'profile' | 'security'>('accounts');
   const [openSyahriahModalTrigger, setOpenSyahriahModalTrigger] = useState(false);
@@ -86,6 +93,14 @@ function MainContent() {
         <ReceiptModal
           receipt={activeReceipt}
           onClose={() => setActiveReceipt(null)}
+        />
+      )}
+
+      {/* Global Edit Syahriah Payment Modal */}
+      {editingSyahriahPayment && (
+        <EditSyahriahModal
+          payment={editingSyahriahPayment}
+          onClose={() => setEditingSyahriahPayment(null)}
         />
       )}
 

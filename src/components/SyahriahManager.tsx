@@ -17,6 +17,7 @@ import {
   UserCheck,
   ChevronRight,
   ShieldCheck,
+  Edit3,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import {
@@ -48,6 +49,7 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
     getStudentPaidMonths,
     isMonthPaid,
     setActiveReceipt,
+    setEditingSyahriahPayment,
     isAdmin,
     requireAdmin,
   } = useFinance();
@@ -433,14 +435,26 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
                         }
 
                         if (paid) {
+                          const paymentRecord = syahriahPayments.find(
+                            (p) =>
+                              p.studentId === student.id &&
+                              p.months &&
+                              p.months.includes(month)
+                          );
                           return (
                             <td key={month} className="py-2 px-1 text-center">
-                              <span
-                                title={`Lunas bulan ${month}`}
-                                className="w-7 h-7 rounded-md bg-emerald-600 text-white inline-flex items-center justify-center font-bold text-[11px] shadow-2xs"
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (paymentRecord) {
+                                    setActiveReceipt(paymentRecord);
+                                  }
+                                }}
+                                title={`Lunas bulan ${month}. Klik untuk lihat bukti atau koreksi pembayaran`}
+                                className="w-7 h-7 rounded-md bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white inline-flex items-center justify-center font-bold text-[11px] shadow-2xs cursor-pointer transition-colors"
                               >
                                 ✓
-                              </span>
+                              </button>
                             </td>
                           );
                         }
@@ -661,10 +675,24 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
                         <button
                           type="button"
                           onClick={() => setActiveReceipt(payment)}
-                          className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                          title="Cetak Kwitansi"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                          title="Lihat, Simpan & Cetak Bukti Pembayaran"
                         >
-                          <Receipt className="w-4 h-4" />
+                          <Receipt className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Bukti</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            requireAdmin(() => {
+                              setEditingSyahriahPayment(payment);
+                            }, `Koreksi Kwitansi ${payment.receiptNo} (${payment.studentName})`);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                          title="Koreksi / Edit Pembayaran Ini"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Edit</span>
                         </button>
                         <button
                           type="button"
@@ -917,7 +945,7 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
                   className="px-5 py-2 text-sm font-semibold bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-lg shadow-sm transition-colors cursor-pointer flex items-center gap-2"
                 >
                   <Receipt className="w-4 h-4" />
-                  <span>Simpan & Terbitkan Kwitansi</span>
+                  <span>Simpan & Buka Bukti Pembayaran</span>
                 </button>
               </div>
             </form>

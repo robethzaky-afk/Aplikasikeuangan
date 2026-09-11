@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Wallet,
   GraduationCap,
@@ -9,12 +9,15 @@ import {
   ArrowRight,
   Clock,
   CheckCircle,
+  CheckCircle2,
   AlertCircle,
   Receipt,
   PiggyBank,
   Plus,
   ShieldCheck,
   Lock,
+  Scale,
+  RefreshCw,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { formatRupiah, formatDateIndo } from '../utils/formatters';
@@ -38,6 +41,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     totalSyahriahIncome,
     totalOtherIncome,
     totalExpenseOverall,
+    netIncomeOverall,
+    cashDiscrepancy,
     cashAccounts,
     students,
     syahriahPayments,
@@ -47,7 +52,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
     isAdmin,
     requireAdmin,
     openAdminPrompt,
+    reconcileCashBalances,
   } = useFinance();
+
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcileNotice, setReconcileNotice] = useState<string | null>(null);
+
+  const handleQuickReconcile = () => {
+    requireAdmin(async () => {
+      setIsReconciling(true);
+      const res = await reconcileCashBalances();
+      setIsReconciling(false);
+      setReconcileNotice(res.message);
+      setTimeout(() => setReconcileNotice(null), 6000);
+    }, 'Penyelarasan Saldo Kas dengan Buku Kas Umum (BKU)');
+  };
 
   // Current month in Indonesian school year
   const currentMonthIdx = new Date().getMonth(); // 0-11
@@ -319,6 +338,82 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Notice Rekonsiliasi Sukses */}
+        {reconcileNotice && (
+          <div className="mb-4 p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs flex items-center justify-between gap-3 animate-in fade-in duration-300">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-semibold">{reconcileNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReconcileNotice(null)}
+              className="text-emerald-700 hover:text-emerald-900 font-bold px-2 py-0.5"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Status Sinkronisasi & Rekonsiliasi Saldo Kas */}
+        {cashDiscrepancy !== 0 ? (
+          <div className="mb-4 p-4 rounded-xl bg-amber-50/95 border border-amber-300 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-200 text-amber-900 flex items-center justify-center shrink-0 mt-0.5">
+                <Scale className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs font-bold text-amber-950">
+                    Terdeteksi Selisih Saldo Kas: {formatRupiah(Math.abs(cashDiscrepancy))}
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
+                    Perlu Penyelarasan
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800/90 mt-0.5 leading-relaxed">
+                  Saldo akun tercatat ({formatRupiah(totalCashBalance)}) berbeda dengan akumulasi bersih BKU ({formatRupiah(netIncomeOverall)}).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleQuickReconcile}
+                disabled={isReconciling}
+                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isReconciling ? 'animate-spin' : ''}`} />
+                <span>{isReconciling ? 'Menyelaraskan...' : 'Selaraskan Saldo (1-Klik)'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('settings', 'accounts')}
+                className="px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100/50 text-amber-900 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+              >
+                Rincian Audit
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-4 px-3.5 py-2 rounded-lg bg-emerald-50/60 border border-emerald-200 flex items-center justify-between text-xs text-emerald-800">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="font-medium">
+                Saldo Seluruh Kas 100% Klop &amp; Sesuai Mutasi Transaksi BKU
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('settings', 'accounts')}
+              className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer"
+            >
+              Lihat Audit Akun
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {cashAccounts.map((account) => {

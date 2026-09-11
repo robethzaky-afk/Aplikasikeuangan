@@ -9,7 +9,33 @@
   }
 
   @page {
-    margin: 1cm;
+    margin: 0.8cm;
     size: auto;
   }
+
+  /* When printing from receipt modal, isolate the receipt perfectly */
+  body:has(#receipt-modal-backdrop) main,
+  body:has(#receipt-modal-backdrop) header,
+  body:has(#receipt-modal-backdrop) footer {
+    display: none !important;
+  }
+
+  #receipt-modal-backdrop {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  #receipt-modal-container {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    border-radius: 0 !important;
+  }
 }
+

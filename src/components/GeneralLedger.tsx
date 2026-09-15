@@ -13,8 +13,11 @@ import {
   CheckCircle,
   Receipt,
   Search,
+  Edit3,
+  Trash2,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
+import { FinancialTransaction } from '../types';
 import {
   formatRupiah,
   formatDateIndo,
@@ -33,6 +36,10 @@ export const GeneralLedger: React.FC = () => {
     syahriahPayments,
     transferCash,
     setActiveReceipt,
+    deleteTransaction,
+    setEditingTransaction,
+    deleteSyahriahPayment,
+    setEditingSyahriahPayment,
     requireAdmin,
   } = useFinance();
 
@@ -95,6 +102,7 @@ export const GeneralLedger: React.FC = () => {
       debit: p.totalAmount, // Masuk (Debit)
       kredit: 0, // Keluar (Kredit)
       rawPayment: p,
+      rawTransaction: null as FinancialTransaction | null,
       createdAt: p.createdAt,
     }));
 
@@ -111,7 +119,8 @@ export const GeneralLedger: React.FC = () => {
       accountId: resolveTransactionAccountId(t.accountId, t.category),
       debit: t.type === 'INCOME' ? t.amount : 0,
       kredit: t.type === 'EXPENSE' ? t.amount : 0,
-      rawPayment: null,
+      rawPayment: null as any,
+      rawTransaction: t,
       createdAt: t.createdAt,
     }));
 
@@ -291,7 +300,7 @@ export const GeneralLedger: React.FC = () => {
                 <th className="py-3 px-3 text-right min-w-[110px]">Pemasukan (Debit)</th>
                 <th className="py-3 px-3 text-right min-w-[110px]">Pengeluaran (Kredit)</th>
                 <th className="py-3 px-4 text-right min-w-[120px]">Saldo Kas</th>
-                <th className="py-3 px-2 text-center w-14 print:hidden">Aksi</th>
+                <th className="py-3 px-2 text-center w-24 print:hidden">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -327,16 +336,88 @@ export const GeneralLedger: React.FC = () => {
                       {formatRupiah(entry.runningBalance)}
                     </td>
                     <td className="py-2.5 px-2 text-center print:hidden">
-                      {entry.rawPayment && (
-                        <button
-                          type="button"
-                          onClick={() => setActiveReceipt(entry.rawPayment)}
-                          title="Cetak Kwitansi"
-                          className="p-1 text-emerald-700 hover:bg-emerald-50 rounded"
-                        >
-                          <Receipt className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <div className="flex items-center justify-center gap-1">
+                        {entry.rawPayment && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setActiveReceipt(entry.rawPayment)}
+                              title="Cetak Kuitansi Resmi"
+                              className="p-1 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer transition-colors"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                requireAdmin(() => {
+                                  setEditingSyahriahPayment(entry.rawPayment);
+                                }, `Edit Pembayaran Syahriah ${entry.rawPayment.receiptNo}`);
+                              }}
+                              title="Edit Pembayaran Syahriah"
+                              className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded cursor-pointer transition-colors"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                requireAdmin(() => {
+                                  if (
+                                    window.confirm(
+                                      `Hapus pembayaran syahriah ${entry.rawPayment.receiptNo} (${formatRupiah(
+                                        entry.rawPayment.totalAmount
+                                      )})? Saldo kas akan dipulihkan otomatis.`
+                                    )
+                                  ) {
+                                    deleteSyahriahPayment(entry.rawPayment.id);
+                                  }
+                                }, `Hapus Pembayaran Syahriah ${entry.rawPayment.receiptNo}`);
+                              }}
+                              title="Hapus Pembayaran Syahriah"
+                              className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                        {entry.rawTransaction && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                requireAdmin(() => {
+                                  setEditingTransaction(entry.rawTransaction);
+                                }, `Edit Transaksi ${entry.rawTransaction.refNo}`);
+                              }}
+                              title="Edit Catatan Transaksi"
+                              className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded cursor-pointer transition-colors"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                requireAdmin(() => {
+                                  if (
+                                    window.confirm(
+                                      `Hapus transaksi ${entry.rawTransaction.refNo} (${formatRupiah(
+                                        entry.rawTransaction.amount
+                                      )})? Saldo kas akan dipulihkan otomatis.`
+                                    )
+                                  ) {
+                                    deleteTransaction(entry.rawTransaction.id);
+                                  }
+                                }, `Hapus Transaksi ${entry.rawTransaction.refNo}`);
+                              }}
+                              title="Hapus Catatan Transaksi"
+                              className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

@@ -15,6 +15,7 @@ import { FinancialReports } from './components/FinancialReports';
 import { SettingsManager } from './components/SettingsManager';
 import { ReceiptModal } from './components/ReceiptModal';
 import { EditSyahriahModal } from './components/EditSyahriahModal';
+import { EditTransactionModal } from './components/EditTransactionModal';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { School, Heart, ShieldCheck } from 'lucide-react';
 
@@ -24,6 +25,8 @@ function MainContent() {
     setActiveReceipt,
     editingSyahriahPayment,
     setEditingSyahriahPayment,
+    editingTransaction,
+    setEditingTransaction,
     schoolProfile,
   } = useFinance();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
@@ -101,6 +104,14 @@ function MainContent() {
         <EditSyahriahModal
           payment={editingSyahriahPayment}
           onClose={() => setEditingSyahriahPayment(null)}
+        />
+      )}
+
+      {/* Global Edit Transaction Modal */}
+      {editingTransaction && (
+        <EditTransactionModal
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
         />
       )}
 

@@ -63,7 +63,10 @@ interface FinanceContextType {
   addTransaction: (
     trx: Omit<FinancialTransaction, 'id' | 'refNo' | 'createdAt'>
   ) => FinancialTransaction;
+  updateTransaction: (trx: FinancialTransaction) => void;
   deleteTransaction: (id: string) => void;
+  editingTransaction: FinancialTransaction | null;
+  setEditingTransaction: (trx: FinancialTransaction | null) => void;
   transferCash: (
     fromId: string,
     toId: string,
@@ -152,6 +155,40 @@ const STORAGE_KEYS = {
   ADMIN_PWD: 'mi_keuangan_admin_pwd_v1',
   ADMIN_SESSION: 'mi_keuangan_admin_session_v1',
   ADMIN_AUTOLOCK: 'mi_keuangan_admin_autolock_v1',
+  DELETED_TRX: 'mi_keuangan_deleted_trx_ids_v1',
+  DELETED_SYAHRIAH: 'mi_keuangan_deleted_syahriah_ids_v1',
+  PENDING_UPLOAD_TRX: 'mi_keuangan_pending_upload_trx_v1',
+  PENDING_UPLOAD_SYAHRIAH: 'mi_keuangan_pending_upload_syahriah_v1',
+};
+
+// Helper untuk melacak ID yang telah dihapus atau menunggu upload offline
+const getStoredIdSet = (key: string): Set<string> => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
+
+const addStoredId = (key: string, id: string) => {
+  if (!id) return;
+  const set = getStoredIdSet(key);
+  set.add(id);
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.from(set)));
+  } catch {}
+};
+
+const removeStoredId = (key: string, id: string) => {
+  if (!id) return;
+  const set = getStoredIdSet(key);
+  if (set.has(id)) {
+    set.delete(id);
+    try {
+      localStorage.setItem(key, JSON.stringify(Array.from(set)));
+    } catch {}
+  }
 };
 
 // Safe wrapper for fire-and-forget Supabase sync calls
@@ -319,6 +356,35 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     useState<SyahriahPaymentRecord | null>(null);
   const [editingSyahriahPayment, setEditingSyahriahPayment] =
     useState<SyahriahPaymentRecord | null>(null);
+  const [editingTransaction, setEditingTransaction] =
+    useState<FinancialTransaction | null>(null);
+
+  // Live state refs untuk mencegah stale closures pada sync background & event listener
+  const transactionsRef = React.useRef<FinancialTransaction[]>(transactions);
+  const syahriahRef = React.useRef<SyahriahPaymentRecord[]>(syahriahPayments);
+  const cashAccountsRef = React.useRef<CashAccount[]>(cashAccounts);
+  const studentsRef = React.useRef<Student[]>(students);
+  const schoolProfileRef = React.useRef<SchoolProfile>(schoolProfile);
+
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
+
+  useEffect(() => {
+    syahriahRef.current = syahriahPayments;
+  }, [syahriahPayments]);
+
+  useEffect(() => {
+    cashAccountsRef.current = cashAccounts;
+  }, [cashAccounts]);
+
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
+
+  useEffect(() => {
+    schoolProfileRef.current = schoolProfile;
+  }, [schoolProfile]);
 
   // Admin & Security Mode State
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
@@ -578,70 +644,98 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      // 5. Sinkronkan Pembayaran Syahriah (Dua arah: Cloud + Lokal)
+      // 5. Sinkronkan Pembayaran Syahriah (Dua arah aman tanpa membangkitkan data terhapus)
+      const deletedSyahIds = getStoredIdSet(STORAGE_KEYS.DELETED_SYAHRIAH);
+      if (deletedSyahIds.size > 0) {
+        const ids = Array.from(deletedSyahIds);
+        for (let i = 0; i < ids.length; i += 50) {
+          safeSupabase(
+            supabase.from('syahriah_payments').delete().in('id', ids.slice(i, i + 50))
+          );
+        }
+      }
+
       const { data: cloudSyahriah, error: syahErr } = await supabase
         .from('syahriah_payments')
         .select('*')
         .range(0, 4999)
         .order('payment_date', { ascending: false });
 
-      let effectiveSyahriah = syahriahPayments;
-      if (!syahErr && cloudSyahriah && cloudSyahriah.length > 0) {
-        const mappedCloud = cloudSyahriah.map(mapDbToSyahriah);
-        const cloudIds = new Set(mappedCloud.map((p) => p.id));
-        const localOnly = syahriahPayments.filter((p) => !cloudIds.has(p.id));
+      let effectiveSyahriah = syahriahRef.current;
+      if (!syahErr && cloudSyahriah) {
+        const mappedCloud = cloudSyahriah
+          .map(mapDbToSyahriah)
+          .filter((p) => !deletedSyahIds.has(p.id));
 
-        if (localOnly.length > 0) {
-          for (let i = 0; i < localOnly.length; i += 50) {
+        // Hanya unggah pembayaran yang berstatus pending upload offline
+        const pendingSyah = getStoredIdSet(STORAGE_KEYS.PENDING_UPLOAD_SYAHRIAH);
+        const offlinePending = syahriahRef.current.filter(
+          (p) => pendingSyah.has(p.id) && !deletedSyahIds.has(p.id)
+        );
+
+        if (offlinePending.length > 0) {
+          for (let i = 0; i < offlinePending.length; i += 50) {
             await supabase
               .from('syahriah_payments')
-              .upsert(localOnly.slice(i, i + 50).map(mapSyahriahToDb));
+              .upsert(offlinePending.slice(i, i + 50).map(mapSyahriahToDb));
           }
+          offlinePending.forEach((p) =>
+            removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_SYAHRIAH, p.id)
+          );
         }
-        effectiveSyahriah = [...mappedCloud, ...localOnly];
+
+        effectiveSyahriah = [...mappedCloud, ...offlinePending];
         setSyahriahPayments(effectiveSyahriah);
         try {
           localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify(effectiveSyahriah));
         } catch {}
-      } else if (syahriahPayments.length > 0) {
-        for (let i = 0; i < syahriahPayments.length; i += 50) {
-          await supabase
-            .from('syahriah_payments')
-            .upsert(syahriahPayments.slice(i, i + 50).map(mapSyahriahToDb));
+      }
+
+      // 6. Sinkronkan Transaksi Keuangan BKU (Dua arah aman tanpa membangkitkan data terhapus)
+      const deletedTrxIds = getStoredIdSet(STORAGE_KEYS.DELETED_TRX);
+      if (deletedTrxIds.size > 0) {
+        const ids = Array.from(deletedTrxIds);
+        for (let i = 0; i < ids.length; i += 50) {
+          safeSupabase(
+            supabase.from('financial_transactions').delete().in('id', ids.slice(i, i + 50))
+          );
         }
       }
 
-      // 6. Sinkronkan Transaksi Keuangan BKU (Dua arah: Cloud + Lokal)
       const { data: cloudTransactions, error: trxErr } = await supabase
         .from('financial_transactions')
         .select('*')
         .range(0, 4999)
         .order('date', { ascending: false });
 
-      let effectiveTransactions = transactions;
-      if (!trxErr && cloudTransactions && cloudTransactions.length > 0) {
-        const mappedCloud = cloudTransactions.map(mapDbToTransaction);
-        const cloudIds = new Set(mappedCloud.map((t) => t.id));
-        const localOnly = transactions.filter((t) => !cloudIds.has(t.id));
+      let effectiveTransactions = transactionsRef.current;
+      if (!trxErr && cloudTransactions) {
+        const mappedCloud = cloudTransactions
+          .map(mapDbToTransaction)
+          .filter((t) => !deletedTrxIds.has(t.id));
 
-        if (localOnly.length > 0) {
-          for (let i = 0; i < localOnly.length; i += 50) {
+        // Hanya unggah transaksi yang berstatus pending upload offline
+        const pendingTrx = getStoredIdSet(STORAGE_KEYS.PENDING_UPLOAD_TRX);
+        const offlinePending = transactionsRef.current.filter(
+          (t) => pendingTrx.has(t.id) && !deletedTrxIds.has(t.id)
+        );
+
+        if (offlinePending.length > 0) {
+          for (let i = 0; i < offlinePending.length; i += 50) {
             await supabase
               .from('financial_transactions')
-              .upsert(localOnly.slice(i, i + 50).map(mapTransactionToDb));
+              .upsert(offlinePending.slice(i, i + 50).map(mapTransactionToDb));
           }
+          offlinePending.forEach((t) =>
+            removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_TRX, t.id)
+          );
         }
-        effectiveTransactions = [...mappedCloud, ...localOnly];
+
+        effectiveTransactions = [...mappedCloud, ...offlinePending];
         setTransactions(effectiveTransactions);
         try {
           localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(effectiveTransactions));
         } catch {}
-      } else if (transactions.length > 0) {
-        for (let i = 0; i < transactions.length; i += 50) {
-          await supabase
-            .from('financial_transactions')
-            .upsert(transactions.slice(i, i + 50).map(mapTransactionToDb));
-        }
       }
 
       // 7. Otomatis selaraskan saldo kas setiap akun agar tidak 0 dan 100% klop dengan transaksi BKU
@@ -716,13 +810,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
   }, [transactions]);
 
+  // Ref untuk forceFullSync agar background timers & listener selalu memanggil fungsi terkini
+  const forceFullSyncRef = React.useRef(forceFullSync);
+  useEffect(() => {
+    forceFullSyncRef.current = forceFullSync;
+  });
+
   // Otomatis sinkronisasi saat aplikasi dibuka & event listener online/offline & periodic polling
   useEffect(() => {
     let isMounted = true;
 
     const runBootSync = async () => {
       try {
-        await forceFullSync();
+        await forceFullSyncRef.current();
       } catch (err) {
         console.warn('Boot auto-sync note:', err);
       } finally {
@@ -747,14 +847,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     // Sinkronisasi otomatis saat tab/jendela kembali aktif (Multi-komputer sync)
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
-        forceFullSync();
+        forceFullSyncRef.current();
       }
     };
 
     // Polling background setiap 20 detik agar data dari komputer lain otomatis ditarik
     const pollTimer = setInterval(() => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
-        forceFullSync();
+        forceFullSyncRef.current();
       }
     }, 20000);
 
@@ -851,6 +951,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           if (!isMounted) return;
           if (payload.eventType === 'INSERT') {
             const newPayment = mapDbToSyahriah(payload.new);
+            const deletedSyah = getStoredIdSet(STORAGE_KEYS.DELETED_SYAHRIAH);
+            if (deletedSyah.has(newPayment.id)) {
+              safeSupabase(supabase.from('syahriah_payments').delete().eq('id', newPayment.id));
+              return;
+            }
             setSyahriahPayments((prev) => {
               if (prev.some((p) => p.id === newPayment.id)) return prev;
               return [newPayment, ...prev];
@@ -858,6 +963,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
             setLastSyncedAt(new Date());
           } else if (payload.eventType === 'UPDATE') {
             const updated = mapDbToSyahriah(payload.new);
+            const deletedSyah = getStoredIdSet(STORAGE_KEYS.DELETED_SYAHRIAH);
+            if (deletedSyah.has(updated.id)) return;
             setSyahriahPayments((prev) =>
               prev.map((p) => (p.id === updated.id ? updated : p))
             );
@@ -866,6 +973,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as any)?.id;
             if (deletedId) {
+              addStoredId(STORAGE_KEYS.DELETED_SYAHRIAH, deletedId);
+              removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_SYAHRIAH, deletedId);
               setSyahriahPayments((prev) => prev.filter((p) => p.id !== deletedId));
               setLastSyncedAt(new Date());
             }
@@ -879,6 +988,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           if (!isMounted) return;
           if (payload.eventType === 'INSERT') {
             const newTrx = mapDbToTransaction(payload.new);
+            const deletedTrx = getStoredIdSet(STORAGE_KEYS.DELETED_TRX);
+            if (deletedTrx.has(newTrx.id)) {
+              safeSupabase(supabase.from('financial_transactions').delete().eq('id', newTrx.id));
+              return;
+            }
             setTransactions((prev) => {
               if (prev.some((t) => t.id === newTrx.id)) return prev;
               return [newTrx, ...prev];
@@ -886,6 +1000,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
             setLastSyncedAt(new Date());
           } else if (payload.eventType === 'UPDATE') {
             const updated = mapDbToTransaction(payload.new);
+            const deletedTrx = getStoredIdSet(STORAGE_KEYS.DELETED_TRX);
+            if (deletedTrx.has(updated.id)) return;
             setTransactions((prev) =>
               prev.map((t) => (t.id === updated.id ? updated : t))
             );
@@ -893,6 +1009,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as any)?.id;
             if (deletedId) {
+              addStoredId(STORAGE_KEYS.DELETED_TRX, deletedId);
+              removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_TRX, deletedId);
               setTransactions((prev) => prev.filter((t) => t.id !== deletedId));
               setLastSyncedAt(new Date());
             }
@@ -1226,7 +1344,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const deleteSyahriahPayment = (id: string) => {
-    const payment = syahriahPayments.find((p) => p.id === id);
+    addStoredId(STORAGE_KEYS.DELETED_SYAHRIAH, id);
+    removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_SYAHRIAH, id);
+
+    const payment = syahriahRef.current.find((p) => p.id === id);
     if (!payment) return;
 
     let updatedAccounts: CashAccount[] = [];
@@ -1236,10 +1357,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           ? { ...acc, balance: Math.max(0, acc.balance - payment.totalAmount) }
           : acc
       );
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
+      } catch {}
       return updatedAccounts;
     });
 
-    setSyahriahPayments((prev) => prev.filter((p) => p.id !== id));
+    const nextList = syahriahRef.current.filter((p) => p.id !== id);
+    setSyahriahPayments(nextList);
+    try {
+      localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify(nextList));
+    } catch {}
 
     syncWithCloud(async () => {
       const { error: payErr } = await supabase
@@ -1273,7 +1401,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       createdAt: now.toISOString(),
     };
 
-    setTransactions((prev) => [newTrx, ...prev]);
+    addStoredId(STORAGE_KEYS.PENDING_UPLOAD_TRX, newTrx.id);
+
+    const nextTrxs = [newTrx, ...transactions];
+    setTransactions(nextTrxs);
+    try {
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextTrxs));
+    } catch {}
 
     let updatedAccounts: CashAccount[] = [];
     setCashAccounts((prev) => {
@@ -1287,6 +1421,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         return acc;
       });
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
+      } catch {}
       return updatedAccounts;
     });
 
@@ -1296,6 +1433,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         .from('financial_transactions')
         .insert(mapTransactionToDb(newTrx));
       if (trxErr) throw trxErr;
+      removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_TRX, newTrx.id);
       if (updatedAccounts.length > 0) {
         const { error: accErr } = await supabase
           .from('cash_accounts')
@@ -1307,8 +1445,75 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     return newTrx;
   };
 
+  const updateTransaction = (updatedTrx: FinancialTransaction) => {
+    const currentTrxs = transactionsRef.current;
+    const oldTrx = currentTrxs.find((t) => t.id === updatedTrx.id);
+    if (!oldTrx) return;
+
+    let updatedAccounts: CashAccount[] = [];
+    setCashAccounts((prev) => {
+      let accounts = [...prev];
+
+      // 1. Pulihkan efek saldo akun lama
+      accounts = accounts.map((acc) => {
+        if (acc.id === oldTrx.accountId) {
+          const reverted =
+            oldTrx.type === 'INCOME'
+              ? acc.balance - oldTrx.amount
+              : acc.balance + oldTrx.amount;
+          return { ...acc, balance: Math.max(0, reverted) };
+        }
+        return acc;
+      });
+
+      // 2. Terapkan efek saldo akun baru
+      accounts = accounts.map((acc) => {
+        if (acc.id === updatedTrx.accountId) {
+          const applied =
+            updatedTrx.type === 'INCOME'
+              ? acc.balance + updatedTrx.amount
+              : acc.balance - updatedTrx.amount;
+          return { ...acc, balance: Math.max(0, applied) };
+        }
+        return acc;
+      });
+
+      updatedAccounts = accounts.filter(
+        (a) => a.id === oldTrx.accountId || a.id === updatedTrx.accountId
+      );
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
+      } catch {}
+      return accounts;
+    });
+
+    const nextTrxs = currentTrxs.map((t) => (t.id === updatedTrx.id ? updatedTrx : t));
+    setTransactions(nextTrxs);
+    try {
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextTrxs));
+    } catch {}
+
+    // Auto-sync pembaruan transaksi dan saldo ke Supabase
+    syncWithCloud(async () => {
+      const { error: trxErr } = await supabase
+        .from('financial_transactions')
+        .upsert(mapTransactionToDb(updatedTrx));
+      if (trxErr) throw trxErr;
+      if (updatedAccounts.length > 0) {
+        const { error: accErr } = await supabase
+          .from('cash_accounts')
+          .upsert(updatedAccounts.map(mapAccountToDb));
+        if (accErr) throw accErr;
+      }
+    });
+  };
+
   const deleteTransaction = (id: string) => {
-    const trx = transactions.find((t) => t.id === id);
+    addStoredId(STORAGE_KEYS.DELETED_TRX, id);
+    removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_TRX, id);
+
+    const currentTrxs = transactionsRef.current;
+    const trx = currentTrxs.find((t) => t.id === id);
     if (!trx) return;
 
     let updatedAccounts: CashAccount[] = [];
@@ -1317,16 +1522,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         if (acc.id === trx.accountId) {
           const revertedBalance =
             trx.type === 'INCOME'
-              ? acc.balance - trx.amount
+              ? Math.max(0, acc.balance - trx.amount)
               : acc.balance + trx.amount;
           return { ...acc, balance: revertedBalance };
         }
         return acc;
       });
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
+      } catch {}
       return updatedAccounts;
     });
 
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
+    const nextTrxs = currentTrxs.filter((t) => t.id !== id);
+    setTransactions(nextTrxs);
+    try {
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(nextTrxs));
+    } catch {}
 
     syncWithCloud(async () => {
       const { error: trxErr } = await supabase
@@ -1512,6 +1724,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(zeroedAccounts));
+      localStorage.removeItem(STORAGE_KEYS.DELETED_TRX);
+      localStorage.removeItem(STORAGE_KEYS.DELETED_SYAHRIAH);
+      localStorage.removeItem(STORAGE_KEYS.PENDING_UPLOAD_TRX);
+      localStorage.removeItem(STORAGE_KEYS.PENDING_UPLOAD_SYAHRIAH);
 
       // 3. Bersihkan cloud database Supabase jika terhubung
       await safeSupabase(
@@ -1833,7 +2049,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         clearAllFinancialData,
         transactions,
         addTransaction,
+        updateTransaction,
         deleteTransaction,
+        editingTransaction,
+        setEditingTransaction,
         transferCash,
         activeReceipt,
         setActiveReceipt,

@@ -7,6 +7,7 @@ import {
   Search,
   Filter,
   Trash2,
+  Edit3,
   Receipt,
   FileText,
   Building2,
@@ -42,6 +43,7 @@ export const OtherFinances: React.FC<OtherFinancesProps> = ({
     schoolProfile,
     addTransaction,
     deleteTransaction,
+    setEditingTransaction,
     isAdmin,
     requireAdmin,
     openAdminPrompt,
@@ -378,24 +380,38 @@ export const OtherFinances: React.FC<OtherFinancesProps> = ({
                       {isIncome ? '+' : '-'} {formatRupiah(t.amount)}
                     </td>
                     <td className="py-3 px-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          requireAdmin(() => {
-                            if (
-                              window.confirm(
-                                `Hapus transaksi ${t.refNo} (${formatRupiah(t.amount)})? Saldo kas akan dipulihkan otomatis.`
-                              )
-                            ) {
-                              deleteTransaction(t.id);
-                            }
-                          }, `Hapus Transaksi Kas ${t.refNo}`);
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                        title="Hapus Transaksi"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            requireAdmin(() => {
+                              setEditingTransaction(t);
+                            }, `Edit Transaksi Kas ${t.refNo}`);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                          title="Edit Catatan Transaksi"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            requireAdmin(() => {
+                              if (
+                                window.confirm(
+                                  `Hapus transaksi ${t.refNo} (${formatRupiah(t.amount)})? Saldo kas akan dipulihkan otomatis.`
+                                )
+                              ) {
+                                deleteTransaction(t.id);
+                              }
+                            }, `Hapus Transaksi Kas ${t.refNo}`);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Hapus Transaksi"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

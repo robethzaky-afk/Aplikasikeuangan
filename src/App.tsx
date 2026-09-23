@@ -34,6 +34,7 @@ function MainContent() {
   const [settingsSubTab, setSettingsSubTab] = useState<'supabase' | 'accounts' | 'profile' | 'security'>('accounts');
   const [openSyahriahModalTrigger, setOpenSyahriahModalTrigger] = useState(false);
   const [openTrxTypeTrigger, setOpenTrxTypeTrigger] = useState<'INCOME' | 'EXPENSE' | null>(null);
+  const [openPembangunanTrigger, setOpenPembangunanTrigger] = useState<'INCOME' | 'EXPENSE' | 'MUTATION' | null>(null);
 
   const handleNavigate = (tab: NavTab, subTab?: 'supabase' | 'accounts' | 'profile' | 'security') => {
     if (subTab) {
@@ -55,6 +56,12 @@ function MainContent() {
     setTimeout(() => setOpenTrxTypeTrigger(null), 200);
   };
 
+  const handleOpenQuickPembangunan = (action: 'INCOME' | 'EXPENSE' | 'MUTATION' = 'INCOME') => {
+    setActiveTab('pembangunan');
+    setOpenPembangunanTrigger(action);
+    setTimeout(() => setOpenPembangunanTrigger(null), 200);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-gray-900 antialiased selection:bg-emerald-200">
       {/* Navbar Component */}
@@ -72,6 +79,7 @@ function MainContent() {
             onNavigate={handleNavigate}
             onOpenQuickSyahriah={handleOpenQuickSyahriah}
             onOpenQuickTrx={handleOpenQuickTrx}
+            onOpenQuickPembangunan={handleOpenQuickPembangunan}
           />
         )}
 
@@ -79,7 +87,9 @@ function MainContent() {
           <SyahriahManager initialOpenPayModal={openSyahriahModalTrigger} />
         )}
 
-        {activeTab === 'pembangunan' && <PembangunanManager />}
+        {activeTab === 'pembangunan' && (
+          <PembangunanManager initialOpenModal={openPembangunanTrigger} />
+        )}
 
         {activeTab === 'other-finances' && (
           <OtherFinances initialOpenType={openTrxTypeTrigger} />

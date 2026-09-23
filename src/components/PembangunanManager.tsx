@@ -53,7 +53,15 @@ import {
 } from '../data/initialData';
 import { PembangunanReceiptModal } from './PembangunanReceiptModal';
 
-export const PembangunanManager: React.FC = () => {
+interface PembangunanManagerProps {
+  initialOpenModal?: 'INCOME' | 'EXPENSE' | 'MUTATION' | null;
+  initialSubTab?: 'buku-kas' | 'siswa' | 'rekap';
+}
+
+export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
+  initialOpenModal = null,
+  initialSubTab = 'buku-kas',
+}) => {
   const {
     transactions,
     addTransaction,
@@ -67,13 +75,23 @@ export const PembangunanManager: React.FC = () => {
   } = useFinance();
 
   // Sub-tabs in Pembangunan Manager
-  const [activeSubTab, setActiveSubTab] = useState<'buku-kas' | 'siswa' | 'rekap'>('buku-kas');
+  const [activeSubTab, setActiveSubTab] = useState<'buku-kas' | 'siswa' | 'rekap'>(initialSubTab);
 
   // Modals
-  const [showIncomeModal, setShowIncomeModal] = useState(false);
-  const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [showMutationModal, setShowMutationModal] = useState(false);
+  const [showIncomeModal, setShowIncomeModal] = useState(initialOpenModal === 'INCOME');
+  const [showExpenseModal, setShowExpenseModal] = useState(initialOpenModal === 'EXPENSE');
+  const [showMutationModal, setShowMutationModal] = useState(initialOpenModal === 'MUTATION');
   const [activeReceiptTrx, setActiveReceiptTrx] = useState<FinancialTransaction | null>(null);
+
+  React.useEffect(() => {
+    if (initialOpenModal === 'INCOME') setShowIncomeModal(true);
+    if (initialOpenModal === 'EXPENSE') setShowExpenseModal(true);
+    if (initialOpenModal === 'MUTATION') setShowMutationModal(true);
+  }, [initialOpenModal]);
+
+  React.useEffect(() => {
+    if (initialSubTab) setActiveSubTab(initialSubTab);
+  }, [initialSubTab]);
 
   // Filters for Buku Kas
   const [searchTerm, setSearchTerm] = useState('');

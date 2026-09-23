@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Wallet,
   GraduationCap,
@@ -14,6 +14,12 @@ import {
   Receipt,
   PiggyBank,
   Plus,
+  PlusCircle,
+  MinusCircle,
+  ArrowRightLeft,
+  HardHat,
+  Users,
+  Info,
   ShieldCheck,
   Lock,
   Scale,
@@ -28,12 +34,14 @@ interface DashboardProps {
   onNavigate: (tab: NavTab, subTab?: 'supabase' | 'accounts' | 'profile') => void;
   onOpenQuickSyahriah: () => void;
   onOpenQuickTrx: (type?: 'INCOME' | 'EXPENSE') => void;
+  onOpenQuickPembangunan?: (action?: 'INCOME' | 'EXPENSE' | 'MUTATION') => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
   onNavigate,
   onOpenQuickSyahriah,
   onOpenQuickTrx,
+  onOpenQuickPembangunan,
 }) => {
   const {
     schoolProfile,
@@ -92,24 +100,92 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
   });
 
-  // Pembangunan metrics for dashboard quick widget
-  const pembangunanTrx = transactions.filter(
-    (t) =>
-      t.isPembangunan ||
-      t.category === 'INFAQ_PEMBANGUNAN' ||
-      t.category.startsWith('INFAQ_PEMBANGUNAN_') ||
-      t.category === 'MUTASI_SUBSIDI_MADRASAH' ||
-      t.category.startsWith('BANGUNAN_') ||
-      t.category === 'WAKAF_PEMBANGUNAN' ||
-      t.category === 'PEMBANGUNAN_INCOME_LAIN'
-  );
-  const pembangunanIncome = pembangunanTrx
-    .filter((t) => t.type === 'INCOME')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const pembangunanExpense = pembangunanTrx
-    .filter((t) => t.type === 'EXPENSE')
-    .reduce((sum, t) => sum + t.amount, 0);
+  // Comprehensive Pembangunan metrics for dashboard monitoring
+  const pembangunanTrx = useMemo(() => {
+    return transactions.filter(
+      (t) =>
+        t.isPembangunan ||
+        t.category === 'INFAQ_PEMBANGUNAN' ||
+        t.category.startsWith('INFAQ_PEMBANGUNAN_') ||
+        t.category === 'MUTASI_SUBSIDI_MADRASAH' ||
+        t.category.startsWith('BANGUNAN_') ||
+        t.category === 'WAKAF_PEMBANGUNAN' ||
+        t.category === 'PEMBANGUNAN_INCOME_LAIN'
+    );
+  }, [transactions]);
+
+  const pembangunanIncome = useMemo(() => {
+    return pembangunanTrx
+      .filter((t) => t.type === 'INCOME')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [pembangunanTrx]);
+
+  const pembangunanMurniIncome = useMemo(() => {
+    return pembangunanTrx
+      .filter((t) => t.type === 'INCOME' && t.category !== 'MUTASI_SUBSIDI_MADRASAH')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [pembangunanTrx]);
+
+  const pembangunanSubsidiIncome = useMemo(() => {
+    return pembangunanTrx
+      .filter((t) => t.type === 'INCOME' && t.category === 'MUTASI_SUBSIDI_MADRASAH')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [pembangunanTrx]);
+
+  const pembangunanExpense = useMemo(() => {
+    return pembangunanTrx
+      .filter((t) => t.type === 'EXPENSE')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [pembangunanTrx]);
+
+  const materialExpense = useMemo(() => {
+    return pembangunanTrx
+      .filter((t) => t.type === 'EXPENSE' && t.category === 'BANGUNAN_MATERIAL')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [pembangunanTrx]);
+
+  const upahExpense = useMemo(() => {
+    return pembangunanTrx
+      .filter((t) => t.type === 'EXPENSE' && t.category === 'BANGUNAN_UPAH_TUKANG')
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [pembangunanTrx]);
+
+  const otherPembangunanExpense = pembangunanExpense - (materialExpense + upahExpense);
+
   const pembangunanBalance = pembangunanIncome - pembangunanExpense;
+
+  // Student infaq aggregation
+  const targetPerStudent = schoolProfile.targetInfaqPembangunan || 500000;
+  const studentInfaqMap = useMemo(() => {
+    const map = new Map<string, number>();
+    pembangunanTrx.forEach((t) => {
+      if (t.type === 'INCOME' && t.studentId) {
+        map.set(t.studentId, (map.get(t.studentId) || 0) + t.amount);
+      }
+    });
+    return map;
+  }, [pembangunanTrx]);
+
+  const lunasStudentCount = students.filter(
+    (s) => (studentInfaqMap.get(s.id) || 0) >= targetPerStudent
+  ).length;
+  const mengangsurStudentCount = students.length - lunasStudentCount;
+  const totalInfaqSiswaTerkumpul = students.reduce(
+    (sum, s) => sum + (studentInfaqMap.get(s.id) || 0),
+    0
+  );
+  const totalTargetSiswa = students.length * targetPerStudent;
+  const progressSiswaPercent =
+    totalTargetSiswa > 0
+      ? Math.min(100, Math.round((totalInfaqSiswaTerkumpul / totalTargetSiswa) * 100))
+      : 0;
+
+  // 4 latest pembangunan transactions
+  const recentPembangunanTrx = useMemo(() => {
+    return [...pembangunanTrx]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id))
+      .slice(0, 4);
+  }, [pembangunanTrx]);
 
   // Recent 6 activities (combining syahriah and general transactions)
   const recentSyahriah = syahriahPayments.slice(0, 4).map((p) => ({
@@ -329,42 +405,353 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Pos Khusus Infak Pembangunan Widget Banner */}
-      <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-md border border-emerald-800/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 shadow-md">
-            <Building2 className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">
-                Pos Khusus
-              </span>
-              <span className="text-xs text-emerald-200">
-                LP Ma'arif NU Al Ihsan Soborejo
-              </span>
-            </div>
-            <h4 className="text-base sm:text-lg font-bold text-white mt-0.5">
-              Dana &amp; Infak Pembangunan Gedung Madrasah
-            </h4>
-            <p className="text-xs text-emerald-100/90 mt-1">
-              Saldo Kas Pembangunan:{' '}
-              <strong className="text-white font-mono text-sm">{formatRupiah(pembangunanBalance)}</strong>
-              {' '}• Penerimaan (Infak &amp; Subsidi): <span className="font-mono text-emerald-300">{formatRupiah(pembangunanIncome)}</span>
-              {' '}• Belanja: <span className="font-mono text-rose-300">{formatRupiah(pembangunanExpense)}</span>
-            </p>
-          </div>
+      {/* ======================================================== */}
+      {/* TAMPILAN MONITORING KEUANGAN KHUSUS INFAK PEMBANGUNAN     */}
+      {/* ======================================================== */}
+      <div className="bg-gradient-to-br from-slate-900 via-emerald-950 to-teal-950 text-white rounded-2xl p-5 sm:p-7 shadow-lg border border-emerald-800/40 relative overflow-hidden">
+        {/* Background decorative watermark */}
+        <div className="absolute right-0 top-0 bottom-0 opacity-5 pointer-events-none flex items-center pr-6">
+          <Building2 className="w-80 h-80 text-emerald-100" />
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => onNavigate('pembangunan')}
-            className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <span>Buka Tab Infak Pembangunan</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+        <div className="relative z-10 space-y-6">
+          {/* Header Monitoring */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-white/10">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-400 text-amber-950 uppercase tracking-wider shadow-xs">
+                  <Building2 className="w-3.5 h-3.5" />
+                  Pos Khusus Dana Pembangunan
+                </span>
+                <span className="text-xs text-emerald-300 font-mono">
+                  LP Ma'arif NU Al Ihsan Soborejo
+                </span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
+                <span>Monitoring Ketersediaan Dana Pembangunan</span>
+              </h3>
+              <p className="text-xs sm:text-sm text-emerald-100/85 mt-1 max-w-2xl leading-relaxed">
+                Pemantauan real-time saldo kas pembangunan, serapan belanja material &amp; upah tukang, serta alokasi subsidi dari kas madrasah umum untuk memudahkan bendahara.
+              </p>
+            </div>
+
+            {/* Aksi Cepat Bendahara Langsung dari Dashboard */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() =>
+                  requireAdmin(
+                    () => (onOpenQuickPembangunan ? onOpenQuickPembangunan('INCOME') : onNavigate('pembangunan')),
+                    'Pencatatan Pemasukan Infak Pembangunan'
+                  )
+                }
+                className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4 text-emerald-950" />
+                <span>+ Catat Infak</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  requireAdmin(
+                    () => (onOpenQuickPembangunan ? onOpenQuickPembangunan('EXPENSE') : onNavigate('pembangunan')),
+                    'Pencatatan Belanja Pembangunan'
+                  )
+                }
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <MinusCircle className="w-4 h-4" />
+                <span>+ Belanja Gedung</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  requireAdmin(
+                    () => (onOpenQuickPembangunan ? onOpenQuickPembangunan('MUTATION') : onNavigate('pembangunan')),
+                    'Mutasi Subsidi Kas Madrasah ke Pembangunan'
+                  )
+                }
+                className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <ArrowRightLeft className="w-4 h-4 text-slate-950" />
+                <span>↔ Mutasi Kas Madrasah</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigate('pembangunan')}
+                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-xl border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>Buka Tab Lengkap</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Cards Grid Khusus Monitoring Pembangunan */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Ketersediaan Saldo Kas Pembangunan */}
+            <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-xl p-4.5 flex flex-col justify-between hover:bg-white/[0.13] transition-colors">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider">
+                    Sisa Kas Pembangunan
+                  </span>
+                  <div className="w-8 h-8 rounded-lg bg-amber-400 text-slate-950 flex items-center justify-center font-bold">
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-2.5">
+                  <h4 className="text-xl sm:text-2xl font-black font-mono text-white">
+                    {formatRupiah(pembangunanBalance)}
+                  </h4>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        pembangunanBalance >= 0
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      }`}
+                    >
+                      {pembangunanBalance >= 0 ? '✓ Dana Tersedia' : '⚠ Perlu Tambahan Dana'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-emerald-100/70 mt-3 pt-2.5 border-t border-white/10">
+                Saldo siap digunakan untuk pembayaran material &amp; upah tukang.
+              </p>
+            </div>
+
+            {/* Card 2: Total Penerimaan & Porsi Subsidi */}
+            <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-xl p-4.5 flex flex-col justify-between hover:bg-white/[0.13] transition-colors">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider">
+                    Total Dana Dihimpun
+                  </span>
+                  <div className="w-8 h-8 rounded-lg bg-emerald-400 text-slate-950 flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-2.5">
+                  <h4 className="text-xl sm:text-2xl font-black font-mono text-emerald-300">
+                    {formatRupiah(pembangunanIncome)}
+                  </h4>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] text-emerald-100/80">
+                    <span>Infaq Murni: <strong className="text-white">{formatRupiah(pembangunanMurniIncome)}</strong></span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+                <span className="text-emerald-100/70">Subsidi Kas Madrasah:</span>
+                <span className="font-mono font-bold text-amber-300">
+                  {formatRupiah(pembangunanSubsidiIncome)}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3: Realisasi Belanja & Upah */}
+            <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-xl p-4.5 flex flex-col justify-between hover:bg-white/[0.13] transition-colors">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider">
+                    Realisasi Belanja &amp; Upah
+                  </span>
+                  <div className="w-8 h-8 rounded-lg bg-rose-400 text-slate-950 flex items-center justify-center">
+                    <TrendingDown className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-2.5">
+                  <h4 className="text-xl sm:text-2xl font-black font-mono text-rose-300">
+                    {formatRupiah(pembangunanExpense)}
+                  </h4>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] text-rose-100/80">
+                    <span>Material: <strong className="text-white">{formatRupiah(materialExpense)}</strong></span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+                <span className="text-rose-100/70">Upah Tukang &amp; Pekerja:</span>
+                <span className="font-mono font-bold text-white">
+                  {formatRupiah(upahExpense)}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 4: Capaian Infak Siswa / Santri */}
+            <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-xl p-4.5 flex flex-col justify-between hover:bg-white/[0.13] transition-colors">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider">
+                    Infak Terkumpul Santri
+                  </span>
+                  <div className="w-8 h-8 rounded-lg bg-sky-400 text-slate-950 flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="mt-2.5">
+                  <h4 className="text-xl sm:text-2xl font-black font-mono text-sky-200">
+                    {formatRupiah(totalInfaqSiswaTerkumpul)}
+                  </h4>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <div className="flex-1 bg-white/20 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-amber-400 h-full rounded-full transition-all"
+                        style={{ width: `${progressSiswaPercent}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-amber-300">
+                      {progressSiswaPercent}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+                <span className="text-emerald-100/70">Status Santri:</span>
+                <span className="font-semibold text-emerald-300">
+                  {lunasStudentCount} Lunas • {mengangsurStudentCount} Mengangsur
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Lower Section: Recent Pembangunan Feed & Kas Madrasah Support */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-2">
+            {/* Feed Transaksi Terkini Pembangunan (Span 2) */}
+            <div className="lg:col-span-2 bg-black/25 rounded-xl p-4 border border-white/10">
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-100">
+                    Arus Transaksi Terkini Pembangunan
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('pembangunan')}
+                  className="text-[11px] font-medium text-amber-300 hover:text-amber-200 flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Lihat Semua Buku Kas</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              {recentPembangunanTrx.length === 0 ? (
+                <div className="py-6 text-center text-xs text-emerald-200/60">
+                  Belum ada transaksi pembangunan tercatat. Klik tombol <strong>+ Catat Infak</strong> atau <strong>↔ Mutasi Kas Madrasah</strong> di atas untuk memulai pencatatan.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {recentPembangunanTrx.map((trx) => {
+                    const isIncome = trx.type === 'INCOME';
+                    const isMutation = trx.category === 'MUTASI_SUBSIDI_MADRASAH';
+                    return (
+                      <div
+                        key={trx.id}
+                        className="bg-white/5 hover:bg-white/10 rounded-lg p-2.5 border border-white/5 flex items-center justify-between gap-3 transition-colors"
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                              isMutation
+                                ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                                : isIncome
+                                ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/40'
+                                : 'bg-rose-400/20 text-rose-300 border border-rose-400/40'
+                            }`}
+                          >
+                            {isMutation ? (
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                            ) : isIncome ? (
+                              <TrendingUp className="w-3.5 h-3.5" />
+                            ) : (
+                              <TrendingDown className="w-3.5 h-3.5" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white truncate">
+                                {trx.payerOrPayee}
+                              </span>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                  isMutation
+                                    ? 'bg-amber-900/60 text-amber-200'
+                                    : isIncome
+                                    ? 'bg-emerald-900/60 text-emerald-200'
+                                    : 'bg-rose-900/60 text-rose-200'
+                                }`}
+                              >
+                                {isMutation ? 'Subsidi Madrasah' : isIncome ? 'Infak Masuk' : 'Belanja'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-emerald-100/70 truncate mt-0.5">
+                              {trx.description || trx.categoryLabel}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span
+                            className={`text-xs sm:text-sm font-bold font-mono ${
+                              isIncome ? 'text-emerald-300' : 'text-rose-300'
+                            }`}
+                          >
+                            {isIncome ? '+' : '-'} {formatRupiah(trx.amount)}
+                          </span>
+                          <span className="block text-[10px] text-emerald-100/50">
+                            {formatDateIndo(trx.date)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Rekomendasi & Dukungan Kas Madrasah Umum */}
+            <div className="bg-black/25 rounded-xl p-4 border border-white/10 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 pb-3 mb-3 border-b border-white/10">
+                  <Landmark className="w-4 h-4 text-emerald-300" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-100">
+                    Dukungan Kas Madrasah Umum
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-white/5 border border-white/10 mb-3">
+                  <span className="text-[11px] text-emerald-200/80 block">
+                    Saldo Tersedia Seluruh Kas Madrasah:
+                  </span>
+                  <span className="text-lg font-bold font-mono text-amber-300">
+                    {formatRupiah(totalCashBalance)}
+                  </span>
+                </div>
+
+                <p className="text-xs text-emerald-100/80 leading-relaxed">
+                  Jika infak santri belum mencukupi kebutuhan pembelanjaan material atau upah tukang yang mendesak, bendahara dapat mengalokasikan subsidi kas umum ke pos pembangunan.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  requireAdmin(
+                    () => (onOpenQuickPembangunan ? onOpenQuickPembangunan('MUTATION') : onNavigate('pembangunan')),
+                    'Mutasi Subsidi Kas Madrasah ke Pembangunan'
+                  )
+                }
+                className="mt-4 w-full py-2.5 px-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+                <span>Salurkan Subsidi ke Pembangunan</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

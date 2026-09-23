@@ -249,6 +249,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         if (parsed.standardSyahriah === 40000 || !parsed.standardSyahriah) {
           parsed.standardSyahriah = 20000;
         }
+        if (!parsed.targetInfaqPembangunan || parsed.targetInfaqPembangunan <= 0) {
+          parsed.targetInfaqPembangunan = 500000;
+        }
         return parsed;
       } catch {
         // fallback
@@ -1061,11 +1064,28 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   // Actions dengan Sinkronisasi Otomatis ke Supabase Cloud
   const updateSchoolProfile = (profile: SchoolProfile) => {
     setSchoolProfile(profile);
+    try {
+      localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    } catch {}
+
     syncWithCloud(async () => {
+      const payload = mapProfileToDb(profile);
       const { error } = await supabase
         .from('school_profile')
-        .upsert(mapProfileToDb(profile));
-      if (error) throw error;
+        .upsert(payload);
+
+      if (error) {
+        // Jika kolom target_infaq_pembangunan belum dibuat di cloud Supabase, coba tanpa kolom tersebut
+        if (error.message && error.message.toLowerCase().includes('target_infaq_pembangunan')) {
+          const { target_infaq_pembangunan, ...restPayload } = payload as any;
+          const { error: retryErr } = await supabase
+            .from('school_profile')
+            .upsert(restPayload);
+          if (retryErr) throw retryErr;
+        } else {
+          throw error;
+        }
+      }
     });
   };
 

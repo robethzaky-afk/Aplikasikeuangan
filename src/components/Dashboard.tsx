@@ -610,7 +610,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
               <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
-                <span className="text-emerald-100/70">Status Santri:</span>
+                <span className="text-emerald-200/80 font-mono">
+                  Target: {formatRupiah(targetPerStudent)}
+                </span>
                 <span className="font-semibold text-emerald-300">
                   {lunasStudentCount} Lunas • {mengangsurStudentCount} Mengangsur
                 </span>

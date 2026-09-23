@@ -71,6 +71,7 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
     cashAccounts,
     students,
     schoolProfile,
+    updateSchoolProfile,
     requireAdmin,
   } = useFinance();
 
@@ -82,6 +83,15 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
   const [showExpenseModal, setShowExpenseModal] = useState(initialOpenModal === 'EXPENSE');
   const [showMutationModal, setShowMutationModal] = useState(initialOpenModal === 'MUTATION');
   const [activeReceiptTrx, setActiveReceiptTrx] = useState<FinancialTransaction | null>(null);
+
+  // Quick Edit Target Infaq Pembangunan Modal
+  const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+  const [targetInput, setTargetInput] = useState<number>(schoolProfile.targetInfaqPembangunan || 500000);
+
+  // Sync targetInput with schoolProfile
+  React.useEffect(() => {
+    setTargetInput(schoolProfile.targetInfaqPembangunan || 500000);
+  }, [schoolProfile.targetInfaqPembangunan]);
 
   React.useEffect(() => {
     if (initialOpenModal === 'INCOME') setShowIncomeModal(true);
@@ -808,12 +818,28 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
               <span className="text-xs text-amber-600 block mt-1">Perlu Pembayaran Bertahap</span>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
-              <span className="text-xs text-teal-700 font-semibold block uppercase">Total Infak Terkumpul Siswa</span>
-              <span className="text-xl font-bold text-teal-900 font-mono">{formatRupiah(studentSummary.totalTerkumpul)}</span>
-              <span className="text-xs text-gray-500 block mt-1">
-                Target: {formatRupiah(targetPerStudent)} / siswa
-              </span>
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <span className="text-xs text-teal-700 font-semibold block uppercase">Total Infak Terkumpul Siswa</span>
+                <span className="text-xl font-bold text-teal-900 font-mono">{formatRupiah(studentSummary.totalTerkumpul)}</span>
+              </div>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                <span className="text-xs text-gray-500">
+                  Target: <strong className="font-mono text-gray-800">{formatRupiah(targetPerStudent)}</strong> / anak
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTargetInput(targetPerStudent);
+                    setIsTargetModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 px-2 py-0.5 rounded-md border border-teal-200 transition-colors cursor-pointer"
+                  title="Klik untuk mengubah nilai target infak per siswa"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>Ubah Target</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1118,6 +1144,120 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
           transaction={activeReceiptTrx}
           onClose={() => setActiveReceiptTrx(null)}
         />
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 5: UBAH TARGET INFAK PEMBANGUNAN PER SISWA        */}
+      {/* ======================================================== */}
+      {isTargetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-teal-200">
+            <div className="p-5 bg-gradient-to-r from-teal-900 to-emerald-900 text-white flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-teal-300">
+                  <GraduationCap className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">
+                    Ubah Target Infak per Santri
+                  </h3>
+                  <p className="text-xs text-teal-200/80 mt-0.5">
+                    Patokan pelunasan infak pembangunan
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTargetModalOpen(false)}
+                className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (targetInput <= 0) return;
+                requireAdmin(() => {
+                  updateSchoolProfile({
+                    ...schoolProfile,
+                    targetInfaqPembangunan: Number(targetInput),
+                  });
+                  setIsTargetModalOpen(false);
+                }, `Ubah Target Infak Menjadi ${formatRupiah(targetInput)}`);
+              }}
+              className="p-5 space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">
+                  Nominal Target Infak (Rp)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">
+                    Rp
+                  </span>
+                  <input
+                    type="number"
+                    min="10000"
+                    step="50000"
+                    required
+                    value={targetInput}
+                    onChange={(e) => setTargetInput(Number(e.target.value))}
+                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 focus:bg-white border border-gray-300 rounded-xl font-mono text-base font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <span className="text-xs text-teal-700 font-semibold block mt-1">
+                  Terbaca: {formatRupiah(targetInput)} per siswa
+                </span>
+              </div>
+
+              {/* Quick Presets */}
+              <div>
+                <span className="text-[11px] font-semibold text-gray-500 block mb-1.5">
+                  Pilihan Cepat Target:
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[250000, 500000, 750000, 1000000, 1500000, 2000000].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setTargetInput(preset)}
+                      className={`px-2 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                        targetInput === preset
+                          ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
+                          : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-teal-50 hover:border-teal-300'
+                      }`}
+                    >
+                      {formatRupiah(preset)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-3 bg-teal-50/70 border border-teal-100 rounded-xl text-xs text-teal-900 leading-relaxed">
+                <p className="font-semibold text-teal-950 mb-0.5">ℹ️ Catatan Sistem:</p>
+                Nilai target ini akan menjadi acuan perhitungan status pelunasan santri di seluruh tabel monitoring, laporan infak, serta widget Infak Pembangunan di Dashboard utama.
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setIsTargetModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 active:scale-95 rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  Simpan Target Baru
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

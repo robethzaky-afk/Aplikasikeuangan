@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS public.school_profile (
     treasurer_name text,
     academic_year text,
     standard_syahriah numeric DEFAULT 20000,
+    target_infaq_pembangunan numeric DEFAULT 500000,
     updated_at timestamptz DEFAULT now()
 );
 
@@ -541,6 +542,7 @@ export function mapProfileToDb(p: SchoolProfile) {
     treasurer_name: p.treasurerName,
     academic_year: p.academicYear,
     standard_syahriah: p.standardSyahriah || 20000,
+    target_infaq_pembangunan: p.targetInfaqPembangunan || 500000,
     updated_at: new Date().toISOString(),
   };
 }
@@ -563,6 +565,9 @@ export function mapDbToProfile(row: any): SchoolProfile {
     treasurerName: row.treasurer_name || '',
     academicYear: row.academic_year || '2024/2025',
     standardSyahriah: Number(row.standard_syahriah || 20000),
+    targetInfaqPembangunan: row.target_infaq_pembangunan
+      ? Number(row.target_infaq_pembangunan)
+      : (row.targetInfaqPembangunan ? Number(row.targetInfaqPembangunan) : 500000),
   };
 }
 

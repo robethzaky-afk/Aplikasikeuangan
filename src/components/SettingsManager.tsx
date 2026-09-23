@@ -79,6 +79,10 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
+  useEffect(() => {
+    setFormData({ ...schoolProfile });
+  }, [schoolProfile]);
+
   // Editing cash account state
   const [editingAccount, setEditingAccount] = useState<CashAccount | null>(null);
   const [accountSaveNotice, setAccountSaveNotice] = useState<string | null>(null);
@@ -1205,7 +1209,7 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
                   Nama Bendahara Madrasah
@@ -1231,18 +1235,51 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono font-bold"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Tarif Standar Syahriah (Rp/Bulan)
-                </label>
-                <input
-                  type="number"
-                  required
-                  value={formData.standardSyahriah}
-                  onChange={(e) => setFormData({ ...formData, standardSyahriah: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono font-bold"
-                />
+            {/* Bagian Patokan Tarif & Target Siswa */}
+            <div className="pt-2 border-t border-gray-100 space-y-3">
+              <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                <PiggyBank className="w-4 h-4 text-emerald-700" />
+                <span>Patokan Tarif Standar & Target Pembayaran Santri</span>
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200/80 space-y-1.5">
+                  <label className="block text-xs font-bold text-emerald-950">
+                    Tarif Standar Syahriah (Rp/Bulan)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="5000"
+                    required
+                    value={formData.standardSyahriah}
+                    onChange={(e) => setFormData({ ...formData, standardSyahriah: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-lg text-sm font-mono font-bold text-emerald-900 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  />
+                  <p className="text-[11px] text-emerald-700 leading-relaxed">
+                    Besaran iuran syahriah bulanan standar untuk setiap santri (default: Rp 20.000/bulan).
+                  </p>
+                </div>
+
+                <div className="bg-teal-50/70 p-3.5 rounded-xl border border-teal-200/80 space-y-1.5">
+                  <label className="block text-xs font-bold text-teal-950">
+                    Target Infak Pembangunan per Siswa (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="50000"
+                    required
+                    value={formData.targetInfaqPembangunan ?? 500000}
+                    onChange={(e) => setFormData({ ...formData, targetInfaqPembangunan: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-white border border-teal-300 rounded-lg text-sm font-mono font-bold text-teal-900 focus:ring-2 focus:ring-teal-500 shadow-2xs"
+                  />
+                  <p className="text-[11px] text-teal-700 leading-relaxed">
+                    Target patokan kewajiban infak pembangunan yang harus dilunasi setiap siswa/santri (default: Rp 500.000).
+                  </p>
+                </div>
               </div>
             </div>
 

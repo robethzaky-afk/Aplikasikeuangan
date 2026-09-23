@@ -92,6 +92,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
   });
 
+  // Pembangunan metrics for dashboard quick widget
+  const pembangunanTrx = transactions.filter(
+    (t) =>
+      t.isPembangunan ||
+      t.category === 'INFAQ_PEMBANGUNAN' ||
+      t.category.startsWith('INFAQ_PEMBANGUNAN_') ||
+      t.category === 'MUTASI_SUBSIDI_MADRASAH' ||
+      t.category.startsWith('BANGUNAN_') ||
+      t.category === 'WAKAF_PEMBANGUNAN' ||
+      t.category === 'PEMBANGUNAN_INCOME_LAIN'
+  );
+  const pembangunanIncome = pembangunanTrx
+    .filter((t) => t.type === 'INCOME')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const pembangunanExpense = pembangunanTrx
+    .filter((t) => t.type === 'EXPENSE')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const pembangunanBalance = pembangunanIncome - pembangunanExpense;
+
   // Recent 6 activities (combining syahriah and general transactions)
   const recentSyahriah = syahriahPayments.slice(0, 4).map((p) => ({
     id: p.id,
@@ -306,6 +325,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
           >
             <span>Rincian Pengeluaran</span>
             <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Pos Khusus Infak Pembangunan Widget Banner */}
+      <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-md border border-emerald-800/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 shadow-md">
+            <Building2 className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">
+                Pos Khusus
+              </span>
+              <span className="text-xs text-emerald-200">
+                LP Ma'arif NU Al Ihsan Soborejo
+              </span>
+            </div>
+            <h4 className="text-base sm:text-lg font-bold text-white mt-0.5">
+              Dana &amp; Infak Pembangunan Gedung Madrasah
+            </h4>
+            <p className="text-xs text-emerald-100/90 mt-1">
+              Saldo Kas Pembangunan:{' '}
+              <strong className="text-white font-mono text-sm">{formatRupiah(pembangunanBalance)}</strong>
+              {' '}• Penerimaan (Infak &amp; Subsidi): <span className="font-mono text-emerald-300">{formatRupiah(pembangunanIncome)}</span>
+              {' '}• Belanja: <span className="font-mono text-rose-300">{formatRupiah(pembangunanExpense)}</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => onNavigate('pembangunan')}
+            className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <span>Buka Tab Infak Pembangunan</span>
+            <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </div>

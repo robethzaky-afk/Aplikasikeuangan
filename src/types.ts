@@ -93,12 +93,29 @@ export type ExpenseCategory =
   | 'KONSUMSI_DAN_RAPAT'
   | 'LAIN_LAIN';
 
+export type PembangunanIncomeCategory =
+  | 'INFAQ_PEMBANGUNAN_SISWA'
+  | 'INFAQ_PEMBANGUNAN_DONATUR'
+  | 'INFAQ_PEMBANGUNAN_KOMITE'
+  | 'WAKAF_PEMBANGUNAN'
+  | 'MUTASI_SUBSIDI_MADRASAH'
+  | 'PEMBANGUNAN_INCOME_LAIN';
+
+export type PembangunanExpenseCategory =
+  | 'BANGUNAN_MATERIAL'
+  | 'BANGUNAN_UPAH_TUKANG'
+  | 'BANGUNAN_SEWA_ALAT'
+  | 'BANGUNAN_KONSUMSI'
+  | 'BANGUNAN_LISTRIK_AIR'
+  | 'BANGUNAN_PERENCANAAN'
+  | 'BANGUNAN_EXPENSE_LAIN';
+
 export interface FinancialTransaction {
   id: string;
   refNo: string;
   date: string;
   type: TransactionType;
-  category: OtherIncomeCategory | ExpenseCategory | string;
+  category: OtherIncomeCategory | ExpenseCategory | PembangunanIncomeCategory | PembangunanExpenseCategory | string;
   categoryLabel: string;
   amount: number;
   accountId: string; // Kas source/destination
@@ -107,6 +124,11 @@ export interface FinancialTransaction {
   proofDocumentNo?: string;
   recordedBy: string;
   createdAt: string;
+  // Optional Pembangunan metadata
+  isPembangunan?: boolean;
+  studentId?: string;
+  studentName?: string;
+  classGroup?: string;
 }
 
 export interface CashTransfer {
@@ -137,6 +159,7 @@ export interface SchoolProfile {
   treasurerName: string;
   academicYear: string; // e.g. "2024/2025"
   standardSyahriah: number; // e.g. 20000
+  targetInfaqPembangunan?: number; // Target infak pembangunan per siswa (e.g. 500000)
 }
 
 export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline';

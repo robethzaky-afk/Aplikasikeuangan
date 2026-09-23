@@ -214,6 +214,21 @@ export const OtherFinances: React.FC<OtherFinancesProps> = ({
         </div>
       </div>
 
+      {/* Notice Tab Khusus Pembangunan */}
+      <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-950 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <Building2 className="w-5 h-5 text-emerald-700 shrink-0" />
+          <div>
+            <span className="font-bold text-emerald-900 block">
+              Tersedia Tab Khusus: Pengelolaan Infak Pembangunan &amp; Mutasi Kas Madrasah
+            </span>
+            <span className="text-emerald-800/90">
+              Kelola infak siswa &amp; donatur, belanja material/upah tukang, serta mutasi subsidi kas madrasah umum secara terpusat di menu <strong>Infak Pembangunan</strong>.
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Summary Cards for Filtered Items */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">

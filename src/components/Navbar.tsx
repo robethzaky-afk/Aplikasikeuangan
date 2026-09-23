@@ -3,6 +3,7 @@ import {
   School,
   LayoutDashboard,
   GraduationCap,
+  Building2,
   Wallet,
   BookOpenCheck,
   Users,
@@ -26,6 +27,7 @@ import { formatRupiah } from '../utils/formatters';
 export type NavTab =
   | 'dashboard'
   | 'syahriah'
+  | 'pembangunan'
   | 'other-finances'
   | 'bku'
   | 'students'
@@ -61,6 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const navItems: { id: NavTab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'syahriah', label: 'Pembayaran Syahriah', icon: GraduationCap },
+    { id: 'pembangunan', label: 'Infak Pembangunan', icon: Building2 },
     { id: 'other-finances', label: 'Keuangan Lainnya', icon: Wallet },
     { id: 'bku', label: 'Buku Kas Umum (BKU)', icon: BookOpenCheck },
     { id: 'students', label: 'Data Siswa', icon: Users },

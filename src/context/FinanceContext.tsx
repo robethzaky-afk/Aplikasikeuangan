@@ -73,6 +73,14 @@ interface FinanceContextType {
     amount: number,
     description: string
   ) => void;
+  mutateMadrasahToPembangunan: (params: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    date: string;
+    description: string;
+    refNo?: string;
+  }) => void;
   activeReceipt: SyahriahPaymentRecord | null;
   setActiveReceipt: (receipt: SyahriahPaymentRecord | null) => void;
   // Cloud Sync Realtime
@@ -1612,6 +1620,55 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  const mutateMadrasahToPembangunan = (params: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    date: string;
+    description: string;
+    refNo?: string;
+  }) => {
+    const { fromAccountId, toAccountId, amount, date, description, refNo } = params;
+    if (amount <= 0) return;
+
+    const fromAcc = cashAccounts.find((a) => a.id === fromAccountId)?.name || 'Kas Madrasah Umum';
+    const toAcc = cashAccounts.find((a) => a.id === toAccountId)?.name || 'Kas Pembangunan';
+
+    const now = new Date();
+    const timeSuffix = Date.now().toString().slice(-4);
+    const baNo = refNo || `BA-MUT/MAD-BG/${now.getFullYear()}/${timeSuffix}`;
+
+    // 1. Catat Pengeluaran dari Kas Madrasah Umum (alokasi subsidi)
+    addTransaction({
+      date: date || now.toISOString().split('T')[0],
+      type: 'EXPENSE',
+      category: 'MUTASI_SUBSIDI_MADRASAH_KELUAR',
+      categoryLabel: `Subsidi Kas Madrasah (${fromAcc} ke ${toAcc})`,
+      amount,
+      accountId: fromAccountId,
+      payerOrPayee: `Kas Dana Pembangunan (${toAcc})`,
+      description: `[Mutasi Kas Keluar] Subsidi Kas Madrasah ke Pembangunan: ${description}`,
+      proofDocumentNo: baNo,
+      recordedBy: schoolProfile.treasurerName,
+      isPembangunan: false,
+    });
+
+    // 2. Catat Pemasukan ke Kas Pembangunan (penerimaan subsidi)
+    addTransaction({
+      date: date || now.toISOString().split('T')[0],
+      type: 'INCOME',
+      category: 'MUTASI_SUBSIDI_MADRASAH',
+      categoryLabel: 'Mutasi / Subsidi dari Kas Madrasah Umum',
+      amount,
+      accountId: toAccountId,
+      payerOrPayee: `Kas Umum Madrasah (${fromAcc})`,
+      description: `[Mutasi Kas Masuk] Subsidi dari Kas Umum Madrasah: ${description}`,
+      proofDocumentNo: baNo,
+      recordedBy: schoolProfile.treasurerName,
+      isPembangunan: true,
+    });
+  };
+
   // CRUD Akun Kas & Rekening Bank
   const updateCashAccount = (updatedAcc: CashAccount) => {
     setCashAccounts((prev) => {
@@ -2054,6 +2111,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         editingTransaction,
         setEditingTransaction,
         transferCash,
+        mutateMadrasahToPembangunan,
         activeReceipt,
         setActiveReceipt,
         cloudSyncStatus,

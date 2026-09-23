@@ -23,6 +23,7 @@ export const INITIAL_SCHOOL_PROFILE: SchoolProfile = {
   treasurerName: 'FATHURRAZAQ, S.Pd.I',
   academicYear: '2024/2025',
   standardSyahriah: 20000,
+  targetInfaqPembangunan: 500000,
 };
 
 export const INITIAL_CASH_ACCOUNTS: CashAccount[] = [
@@ -82,3 +83,88 @@ export const EXPENSE_CATEGORIES: { id: string; label: string; icon: string }[] =
   { id: 'KONSUMSI_DAN_RAPAT', label: 'Konsumsi Rapat & Pertemuan Komite', icon: 'Coffee' },
   { id: 'LAIN_LAIN', label: 'Pengeluaran Lain-lain', icon: 'MinusCircle' },
 ];
+
+export const PEMBANGUNAN_INCOME_CATEGORIES: { id: string; label: string; icon: string; description: string }[] = [
+  {
+    id: 'INFAQ_PEMBANGUNAN_SISWA',
+    label: 'Infaq Pembangunan Siswa',
+    icon: 'GraduationCap',
+    description: 'Setoran infak gedung / sarpras siswa (bisa dipilih per siswa)',
+  },
+  {
+    id: 'INFAQ_PEMBANGUNAN_DONATUR',
+    label: 'Infaq Donatur & Alumni / Hamba Allah',
+    icon: 'HeartHandshake',
+    description: 'Sumbangan sukarela donatur luar, simpatisan, maupun alumni',
+  },
+  {
+    id: 'INFAQ_PEMBANGUNAN_KOMITE',
+    label: 'Iuran Paguyuban / Komite Wali Murid',
+    icon: 'Users',
+    description: 'Iuran komite khusus program sarana & gedung madrasah',
+  },
+  {
+    id: 'WAKAF_PEMBANGUNAN',
+    label: 'Wakaf Uang / Bahan Bangunan',
+    icon: 'Landmark',
+    description: 'Penerimaan dana wakaf tunai atau taksiran wakaf material',
+  },
+  {
+    id: 'MUTASI_SUBSIDI_MADRASAH',
+    label: 'Mutasi / Subsidi dari Kas Madrasah Umum',
+    icon: 'ArrowRightLeft',
+    description: 'Alokasi subsidi silang dari keuangan madrasah umum ke pembangunan',
+  },
+  {
+    id: 'PEMBANGUNAN_INCOME_LAIN',
+    label: 'Pemasukan Pembangunan Lainnya',
+    icon: 'PlusCircle',
+    description: 'Penerimaan lain yang dialokasikan khusus untuk pembangunan',
+  },
+];
+
+export const PEMBANGUNAN_EXPENSE_CATEGORIES: { id: string; label: string; icon: string; description: string }[] = [
+  {
+    id: 'BANGUNAN_MATERIAL',
+    label: 'Belanja Material & Bahan Bangunan',
+    icon: 'Layers',
+    description: 'Pembelian semen, pasir, batu kali, bata, besi beton, cat, keramik, dll.',
+  },
+  {
+    id: 'BANGUNAN_UPAH_TUKANG',
+    label: 'Upah Tukang & Tenaga Kerja',
+    icon: 'Hammer',
+    description: 'Upah harian tukang batu, laden/kuli, tukang las, atau borongan',
+  },
+  {
+    id: 'BANGUNAN_SEWA_ALAT',
+    label: 'Sewa Alat & Angkutan Material',
+    icon: 'Truck',
+    description: 'Sewa molen cor, scaffolding, armada pick-up/truk pengangkut',
+  },
+  {
+    id: 'BANGUNAN_KONSUMSI',
+    label: 'Konsumsi Tukang & Kerja Bakti',
+    icon: 'Coffee',
+    description: 'Snack harian, makan siang tukang, dan konsumsi gotong royong',
+  },
+  {
+    id: 'BANGUNAN_LISTRIK_AIR',
+    label: 'Instalasi Kelistrikan & Plumbing Air',
+    icon: 'Zap',
+    description: 'Kabel, MCB, sakelar, lampu, pipa PVC, kran, dan tandon air',
+  },
+  {
+    id: 'BANGUNAN_PERENCANAAN',
+    label: 'Desain, Perizinan & Administrasi',
+    icon: 'FileText',
+    description: 'Gambar kerja, denah arsitek, dan administrasi panitia',
+  },
+  {
+    id: 'BANGUNAN_EXPENSE_LAIN',
+    label: 'Pengeluaran Pembangunan Lainnya',
+    icon: 'MinusCircle',
+    description: 'Biaya tak terduga lain yang berkaitan dengan pembangunan gedung',
+  },
+];
+

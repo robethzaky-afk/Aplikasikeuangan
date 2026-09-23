@@ -9,6 +9,7 @@ import { Navbar, NavTab } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
 import { SyahriahManager } from './components/SyahriahManager';
 import { OtherFinances } from './components/OtherFinances';
+import { PembangunanManager } from './components/PembangunanManager';
 import { GeneralLedger } from './components/GeneralLedger';
 import { StudentManager } from './components/StudentManager';
 import { FinancialReports } from './components/FinancialReports';
@@ -77,6 +78,8 @@ function MainContent() {
         {activeTab === 'syahriah' && (
           <SyahriahManager initialOpenPayModal={openSyahriahModalTrigger} />
         )}
+
+        {activeTab === 'pembangunan' && <PembangunanManager />}
 
         {activeTab === 'other-finances' && (
           <OtherFinances initialOpenType={openTrxTypeTrigger} />

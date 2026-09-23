@@ -1252,10 +1252,10 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="5000"
+                    step="any"
                     required
-                    value={formData.standardSyahriah}
-                    onChange={(e) => setFormData({ ...formData, standardSyahriah: Number(e.target.value) })}
+                    value={formData.standardSyahriah ?? ''}
+                    onChange={(e) => setFormData({ ...formData, standardSyahriah: e.target.value === '' ? 0 : Number(e.target.value) })}
                     className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-lg text-sm font-mono font-bold text-emerald-900 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
                   />
                   <p className="text-[11px] text-emerald-700 leading-relaxed">
@@ -1270,10 +1270,10 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="50000"
+                    step="any"
                     required
-                    value={formData.targetInfaqPembangunan ?? 500000}
-                    onChange={(e) => setFormData({ ...formData, targetInfaqPembangunan: Number(e.target.value) })}
+                    value={formData.targetInfaqPembangunan ?? ''}
+                    onChange={(e) => setFormData({ ...formData, targetInfaqPembangunan: e.target.value === '' ? 0 : Number(e.target.value) })}
                     className="w-full px-3 py-2 bg-white border border-teal-300 rounded-lg text-sm font-mono font-bold text-teal-900 focus:ring-2 focus:ring-teal-500 shadow-2xs"
                   />
                   <p className="text-[11px] text-teal-700 leading-relaxed">

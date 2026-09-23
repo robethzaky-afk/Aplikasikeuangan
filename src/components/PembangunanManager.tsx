@@ -86,7 +86,7 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
 
   // Quick Edit Target Infaq Pembangunan Modal
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
-  const [targetInput, setTargetInput] = useState<number>(schoolProfile.targetInfaqPembangunan || 500000);
+  const [targetInput, setTargetInput] = useState<number | string>(schoolProfile.targetInfaqPembangunan || 500000);
 
   // Sync targetInput with schoolProfile
   React.useEffect(() => {
@@ -1178,14 +1178,15 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (targetInput <= 0) return;
+                const numericVal = Number(targetInput);
+                if (isNaN(numericVal) || numericVal <= 0) return;
                 requireAdmin(() => {
                   updateSchoolProfile({
                     ...schoolProfile,
-                    targetInfaqPembangunan: Number(targetInput),
+                    targetInfaqPembangunan: numericVal,
                   });
                   setIsTargetModalOpen(false);
-                }, `Ubah Target Infak Menjadi ${formatRupiah(targetInput)}`);
+                }, `Ubah Target Infak Menjadi ${formatRupiah(numericVal)}`);
               }}
               className="p-5 space-y-4"
             >
@@ -1199,16 +1200,17 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
                   </span>
                   <input
                     type="number"
-                    min="10000"
-                    step="50000"
+                    min="1"
+                    step="any"
                     required
                     value={targetInput}
-                    onChange={(e) => setTargetInput(Number(e.target.value))}
+                    onChange={(e) => setTargetInput(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full pl-10 pr-4 py-2.5 bg-gray-50 focus:bg-white border border-gray-300 rounded-xl font-mono text-base font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    placeholder="Contoh: 500000"
                   />
                 </div>
                 <span className="text-xs text-teal-700 font-semibold block mt-1">
-                  Terbaca: {formatRupiah(targetInput)} per siswa
+                  Terbaca: {formatRupiah(Number(targetInput) || 0)} per siswa
                 </span>
               </div>
 
@@ -1224,7 +1226,7 @@ export const PembangunanManager: React.FC<PembangunanManagerProps> = ({
                       type="button"
                       onClick={() => setTargetInput(preset)}
                       className={`px-2 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
-                        targetInput === preset
+                        Number(targetInput) === preset
                           ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
                           : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-teal-50 hover:border-teal-300'
                       }`}

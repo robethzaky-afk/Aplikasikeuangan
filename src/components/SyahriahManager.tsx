@@ -18,6 +18,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Edit3,
+  Trash2,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import {
@@ -72,6 +73,10 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
 
   // WhatsApp Reminder Modal / Action state
   const [reminderMonth, setReminderMonth] = useState<AcademicMonth>('September');
+
+  // Delete Confirmation state for safe in-app deletion without window.confirm
+  const [recordToDelete, setRecordToDelete] = useState<SyahriahPaymentRecord | null>(null);
+  const [isDeletingRecord, setIsDeletingRecord] = useState<boolean>(false);
 
   // Selected student object
   const selectedStudent = useMemo(
@@ -698,9 +703,7 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
                           type="button"
                           onClick={() => {
                             requireAdmin(() => {
-                              if (window.confirm(`Hapus catatan pembayaran kwitansi ${payment.receiptNo} (${payment.studentName})? Saldo kas akan disesuaikan otomatis.`)) {
-                                deleteSyahriahPayment(payment.id);
-                              }
+                              setRecordToDelete(payment);
                             }, `Hapus Kwitansi ${payment.receiptNo} (${payment.studentName})`);
                           }}
                           className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
@@ -949,6 +952,82 @@ export const SyahriahManager: React.FC<SyahriahManagerProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL KONFIRMASI HAPUS PEMBAYARAN SYAHRIAH */}
+      {recordToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-rose-200">
+            <div className="p-5 bg-rose-50 border-b border-rose-100 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">
+                  Hapus Pembayaran Syahriah?
+                </h3>
+                <p className="text-xs text-rose-800 mt-0.5">
+                  Tindakan ini akan membatalkan kwitansi dan mengembalikan saldo kas.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-3 text-sm text-gray-700">
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">No. Kwitansi:</span>
+                  <span className="font-mono font-bold text-gray-900">{recordToDelete.receiptNo}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Santri / Siswa:</span>
+                  <span className="font-semibold text-gray-900">{recordToDelete.studentName} ({recordToDelete.classGroup})</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Bulan:</span>
+                  <span className="text-emerald-700 font-semibold">{recordToDelete.months.join(', ')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Total Nominal:</span>
+                  <span className="font-mono font-bold text-rose-700">{formatRupiah(recordToDelete.totalAmount)}</span>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-600 bg-amber-50 p-3 rounded-xl border border-amber-200">
+                <p className="font-semibold text-amber-900 mb-1">Dampak Penghapusan:</p>
+                <ul className="list-disc list-inside space-y-0.5 text-amber-800 text-[11px]">
+                  <li>Saldo kas akan otomatis dikurangi sebesar {formatRupiah(recordToDelete.totalAmount)}.</li>
+                  <li>Bulan {recordToDelete.months.join(', ')} akan kembali berstatus tunggakan.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setRecordToDelete(null)}
+                disabled={isDeletingRecord}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (recordToDelete) {
+                    setIsDeletingRecord(true);
+                    deleteSyahriahPayment(recordToDelete.id);
+                    setIsDeletingRecord(false);
+                    setRecordToDelete(null);
+                  }
+                }}
+                disabled={isDeletingRecord}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingRecord ? 'Menghapus...' : 'Ya, Hapus Pembayaran'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

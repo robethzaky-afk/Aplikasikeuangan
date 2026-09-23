@@ -1352,41 +1352,65 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const deleteSyahriahPayment = (id: string) => {
-    addStoredId(STORAGE_KEYS.DELETED_SYAHRIAH, id);
-    removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_SYAHRIAH, id);
+    const cleanId = String(id).trim();
+    addStoredId(STORAGE_KEYS.DELETED_SYAHRIAH, cleanId);
+    removeStoredId(STORAGE_KEYS.PENDING_UPLOAD_SYAHRIAH, cleanId);
 
-    const payment = syahriahRef.current.find((p) => p.id === id);
-    if (!payment) return;
+    // Cari data pembayaran dari ref atau state
+    const payment =
+      syahriahRef.current.find((p) => String(p.id).trim() === cleanId) ||
+      syahriahPayments.find((p) => String(p.id).trim() === cleanId);
 
     let updatedAccounts: CashAccount[] = [];
-    setCashAccounts((prev) => {
-      updatedAccounts = prev.map((acc) =>
-        acc.id === payment.accountId
-          ? { ...acc, balance: Math.max(0, acc.balance - payment.totalAmount) }
-          : acc
-      );
-      try {
-        localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
-      } catch {}
-      return updatedAccounts;
-    });
+    if (payment && payment.accountId && payment.totalAmount > 0) {
+      setCashAccounts((prev) => {
+        updatedAccounts = prev.map((acc) =>
+          acc.id === payment.accountId
+            ? { ...acc, balance: Math.max(0, acc.balance - payment.totalAmount) }
+            : acc
+        );
+        try {
+          localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(updatedAccounts));
+        } catch {}
+        return updatedAccounts;
+      });
+    }
 
-    const nextList = syahriahRef.current.filter((p) => p.id !== id);
+    // Pastikan selalu terhapus dari state dan localStorage tanpa memandang apakah payment objek ditemukan
+    const nextList = (syahriahRef.current.length > 0 ? syahriahRef.current : syahriahPayments).filter(
+      (p) => String(p.id).trim() !== cleanId
+    );
+    syahriahRef.current = nextList;
     setSyahriahPayments(nextList);
     try {
       localStorage.setItem(STORAGE_KEYS.SYAHRIAH, JSON.stringify(nextList));
     } catch {}
 
+    // Tutup modal edit atau modal kwitansi jika sedang menampilkan transaksi ini
+    setActiveReceipt((curr) => (curr && String(curr.id).trim() === cleanId ? null : curr));
+    setEditingSyahriahPayment((curr) => (curr && String(curr.id).trim() === cleanId ? null : curr));
+
     syncWithCloud(async () => {
-      const { error: payErr } = await supabase
-        .from('syahriah_payments')
-        .delete()
-        .eq('id', id);
-      if (payErr) throw payErr;
+      try {
+        const { error: payErr } = await supabase
+          .from('syahriah_payments')
+          .delete()
+          .eq('id', cleanId);
+        if (payErr) {
+          console.warn('Sync delete syahriah notice:', payErr);
+        }
+      } catch (e) {
+        console.warn('Gagal sinkron delete syahriah ke Supabase:', e);
+      }
+
       if (updatedAccounts.length > 0) {
-        await supabase
-          .from('cash_accounts')
-          .upsert(updatedAccounts.map(mapAccountToDb));
+        try {
+          await supabase
+            .from('cash_accounts')
+            .upsert(updatedAccounts.map(mapAccountToDb));
+        } catch (e) {
+          console.warn('Gagal sinkron cash_accounts update ke Supabase:', e);
+        }
       }
     });
   };

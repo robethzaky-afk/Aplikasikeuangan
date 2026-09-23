@@ -4,10 +4,12 @@ import {
   Edit3,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Save,
   Info,
   Loader2,
   Check,
+  Trash2,
 } from 'lucide-react';
 import {
   SyahriahPaymentRecord,
@@ -37,6 +39,7 @@ export const EditSyahriahModal: React.FC<EditSyahriahModalProps> = ({
     cashAccounts,
     syahriahPayments,
     updateSyahriahPayment,
+    deleteSyahriahPayment,
     setActiveReceipt,
   } = useFinance();
 
@@ -153,10 +156,13 @@ export const EditSyahriahModal: React.FC<EditSyahriahModalProps> = ({
     payment.receivedBy || schoolProfile.treasurerName || 'FATHURRAZAQ, S.Pd.I'
   );
 
-  // Validation and saving states
+  // Validation, saving, and delete states
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string>('Perubahan Disimpan!');
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState<boolean>(false);
 
   // When student changes, update rate if appropriate
   const handleStudentChange = (newStudentId: string) => {
@@ -215,6 +221,24 @@ export const EditSyahriahModal: React.FC<EditSyahriahModalProps> = ({
   const oldAccount = cashAccounts.find((a) => a.id === payment.accountId);
   const newAccount = cashAccounts.find((a) => a.id === selectedAccountId);
 
+  // Delete Handler (Hapus Pembayaran Syahriah & Kembalikan Saldo)
+  const handleDelete = () => {
+    setFormError(null);
+    setIsDeleting(true);
+    try {
+      deleteSyahriahPayment(payment.id);
+      setIsDeleting(false);
+      setSuccessMessage('Pembayaran Berhasil Dihapus!');
+      setIsSuccess(true);
+      setTimeout(() => {
+        onClose();
+      }, 500);
+    } catch (err: any) {
+      setIsDeleting(false);
+      setFormError(`Gagal menghapus pembayaran: ${err.message || String(err)}`);
+    }
+  };
+
   // Explicit Save Handler
   const handleSave = () => {
     setFormError(null);
@@ -225,7 +249,7 @@ export const EditSyahriahModal: React.FC<EditSyahriahModalProps> = ({
     }
 
     if (selectedMonths.length === 0) {
-      setFormError('Pilih minimal 1 bulan yang dibayarkan.');
+      setIsConfirmingDelete(true);
       return;
     }
 
@@ -275,6 +299,7 @@ export const EditSyahriahModal: React.FC<EditSyahriahModalProps> = ({
 
       // 2. Beri indikasi visual sukses
       setIsSaving(false);
+      setSuccessMessage('Perubahan Disimpan!');
       setIsSuccess(true);
 
       // 3. Tutup modal edit dan buka kwitansi terbarui
@@ -453,6 +478,31 @@ export const EditSyahriahModal: React.FC<EditSyahriahModalProps> = ({
                 );
               })}
             </div>
+
+            {/* Alert if all months are unselected */}
+            {selectedMonths.length === 0 && (
+              <div className="mt-3 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">
+                      Semua Bulan Pembayaran Telah Dihapus
+                    </span>
+                    <span className="text-[11px] text-rose-800">
+                      Jika Anda ingin membatalkan atau menghapus transaksi kwitansi ini, silakan klik tombol Hapus Kwitansi di bawah.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmingDelete(true)}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Kwitansi Ini</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Tarif per Bulan & Custom Total */}
@@ -666,43 +716,116 @@ export const EditSyahriahModal: React.FC<EditSyahriahModalProps> = ({
             )}
           </div>
 
+          {/* Delete Confirmation Box */}
+          {isConfirmingDelete && (
+            <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl space-y-3 animate-in fade-in zoom-in-95">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="text-xs text-rose-950 space-y-1">
+                  <h5 className="font-bold text-sm text-rose-900">
+                    Konfirmasi Hapus Kwitansi Pembayaran Syahriah
+                  </h5>
+                  <p>
+                    Apakah Anda yakin ingin membatalkan & menghapus transaksi kwitansi{' '}
+                    <strong>{payment.receiptNo}</strong> atas nama santri{' '}
+                    <strong>{payment.studentName}</strong> (Kelas {payment.classGroup})?
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-rose-800 text-[11px] pt-1">
+                    <li>
+                      Saldo rekening <strong>{oldAccount?.name || payment.accountId}</strong> akan otomatis dikurangi sebesar{' '}
+                      <strong className="font-mono">{formatRupiah(payment.totalAmount)}</strong>.
+                    </li>
+                    <li>
+                      Status pembayaran bulan <strong>{payment.months.join(', ')}</strong> akan dikembalikan menjadi belum lunas (tunggakan).
+                    </li>
+                    <li>Nomor kwitansi ini akan dibatalkan secara permanen dan tersimpan di riwayat.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-rose-200">
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmingDelete(false)}
+                  disabled={isDeleting}
+                  className="px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-white rounded-xl border border-gray-300 transition-colors cursor-pointer"
+                >
+                  Batalkan Hapus
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menghapus Pembayaran...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Ya, Hapus Kwitansi Ini Permanen</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Footer Actions */}
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-200">
             <button
               type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+              onClick={() => setIsConfirmingDelete(true)}
+              disabled={isSaving || isDeleting || isSuccess}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              title="Hapus / Batalkan Kwitansi Pembayaran Ini"
             >
-              Batal
+              <Trash2 className="w-4 h-4" />
+              <span>Hapus Pembayaran</span>
             </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || isSuccess}
-              className={`px-5 py-2.5 text-sm font-semibold text-white rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2 ${
-                isSuccess
-                  ? 'bg-emerald-600 hover:bg-emerald-600'
-                  : 'bg-emerald-700 hover:bg-emerald-800 active:scale-95'
-              } disabled:opacity-75`}
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Menyimpan Perubahan...</span>
-                </>
-              ) : isSuccess ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>Perubahan Disimpan!</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>Simpan Perubahan & Terbitkan Kwitansi</span>
-                </>
-              )}
-            </button>
+
+            <div className="flex items-center gap-2.5 ml-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSaving || isDeleting}
+                className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving || isDeleting || isSuccess}
+                className={`px-5 py-2.5 text-xs sm:text-sm font-semibold text-white rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2 ${
+                  isSuccess
+                    ? 'bg-emerald-600 hover:bg-emerald-600'
+                    : 'bg-emerald-700 hover:bg-emerald-800 active:scale-95'
+                } disabled:opacity-75`}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Menyimpan Perubahan...</span>
+                  </>
+                ) : isSuccess ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>{successMessage}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Simpan Perubahan & Terbitkan Kwitansi</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
